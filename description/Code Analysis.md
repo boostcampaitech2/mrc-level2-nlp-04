@@ -34,7 +34,7 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 > arguments.py ModelArguments 11~28
 
 ```py
-model_name_or_path: str = field(
+    model_name_or_path: str = field(
         default="klue/bert-base",
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
@@ -60,7 +60,7 @@ model_name_or_path: str = field(
 > arguments.py DataTrainingArguments 37~92
 
 ```py
-	dataset_name: Optional[str] = field(
+    dataset_name: Optional[str] = field(
         default="../data/train_dataset",
         metadata={"help": "The name of the dataset to use."},
     )
