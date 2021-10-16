@@ -1,5 +1,8 @@
 # etc
 .idea/
+outputs/
+*.bin
+data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
