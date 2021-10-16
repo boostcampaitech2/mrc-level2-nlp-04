@@ -11,6 +11,8 @@ if __name__ == "__main__":
     main()
 ```
 
+<br>
+
 ### Argument 및 model loading
 > train.py main 39~42
 
@@ -26,6 +28,8 @@ model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 * `parser.parse_args_into_dataclasses()`를 사용해 사전에 정의된 인자를 세 개의 변수에 할당할 수 있다. 이 변수를 이용해 Auto series(ex AutoConfig, AutoModel, etc)를 가지고 각 항목을 불러온다.
 
 `ModelArguments`와 `DataTrainingArguments`를 알아보자.
+
+<br>
 
 > arguments.py ModelArguments 11~28
 
@@ -50,6 +54,8 @@ model_name_or_path: str = field(
     )
 ```
 * load할 model과 config, tokenizer를 정의할 수 있다.
+
+<br>
 
 > arguments.py DataTrainingArguments 37~92
 
@@ -113,6 +119,8 @@ model_name_or_path: str = field(
 ```
 * load한 tokenizer에 대한 세부 인자를 설정할 수 있다.
 
+<br>
+
 > train.py main 53~63
 
 ```py
@@ -129,6 +137,8 @@ model_name_or_path: str = field(
     set_seed(training_args.seed)
 ```
 * log를 설정하고 seed를 고정한다.
+
+<br>
 
 > train.py main 65~100
 
@@ -167,6 +177,7 @@ model_name_or_path: str = field(
 * `main` 함수는 마지막 두 줄을 끝으로 종료된다. 만약 `do_train` 또는 `do_eval`이 True일 경우에만 `run_mrc` 함수가 실행되며, 이 두 값은 default가 False이다. 따라서 train.py 실행 시 꼭 이 두 변수 중 한 변수를 True로 설정해줘야한다.
 * `run_mrc`는 3개의 arg 변수와 이 변수들로 불러온 datasets, tokenizer, model을 인자로 입력한다.
 
+<br>
 
 ### MRC
 > train.py run_mrc 103~130
@@ -206,6 +217,8 @@ def run_mrc(
 * padding을 오른쪽에 추가한다.
 * argument와 dataset, tokenizer에 오류가 있는지 확인하며 이는 `check_no_error` 함수로 검사한다. 오류가 존재하면 에러가 발생되며 존재하지 않으면 튜플 형태로 `checkpoint`와 `max_seq_length`가 반환된다.
 
+<br>
+
 > utils_qa.py check_no_error 319~343
 
 ```py
@@ -242,6 +255,8 @@ def check_no_error(
 * `output_dir`에서 checkpoint를 불러온다. `get_last_checkpoint`는 transformers.trainer_utils 라이브러리에 있는 함수로 가장 마지막에 생성된 체크포인트를 가져온다.
 * 이 때, 체크포인트가 있으면 불러오고, 없으면 없는대로 학습을 시작하지만, 체크포인트가 없으면서 `output_dir`이 빈 폴더가 아니라면 `overwrite_output_dir`가 False인데 덮어쓸 우려가 있으므로 에러를 발생시킨다.
 
+<br>
+
 
 > utils_qa.py check_no_error 345~362
 
@@ -269,6 +284,8 @@ def check_no_error(
 * `data_args.max_seq_length`는 토크나이징을 거친 최대 input sequence 길이를 DataTrainingArguments에서 정의해준 것으로 모델의 max_seq_length는 언제든지 변경가능하고 data의 arg보다 커도 문제가 없지만 data의 max_seq_length가 더 크면 문제가 되므로 이에 대한 예외처리를 해준다.
 * 검증을 위한 데이터셋이 존재하지 않으면 에러를 발생시킨다.
 
+<br>
+
 > train.py run_mrc 210~222
 
 ```py
@@ -292,6 +309,8 @@ def check_no_error(
   * `num_proc`으로 Multiprocessing을 설정한다.
   * `remove_columns`로 인자로 받은 컬럼들을 쉽게 drop할 수 있다.
   * 캐시 파일은 매 학습시마다 생성되며 세션이 끝나면 삭제된다. `load_from_cahce_file=False`라면 데이터셋을 캐시에서 불러오지 않고 디스크에서 불러오게 된다. 캐싱의 장점은 학습 시 데이터셋을 매번 디스크에서 가져와야 되는 작업을 미리 캐시에 담아놓는 다는 점에서 학습을 빠르게 할 수 있도록 한다.
+
+<br>
 
 dataset.map으로 처음 적용되는 `prepare_train_features`에 대해 알아보자
 > train.py prepare_train_features 132~208
@@ -375,7 +394,21 @@ dataset.map으로 처음 적용되는 `prepare_train_features`에 대해 알아�
 
         return tokenized_examples
 ```
-* 학습을 위해 train dataset을 전처리하는 과정이다.
+* 학습을 위해 train dataset을 전처리하는 과정이다. 단방향 모델에서는 역방향으로 시퀀스에 접근할 수 있기 때문에 pad_on_right의 경우까지 고려해준다.
+* tokenizer를 통해 data를 tokenize한다. 이 때의 truncation은 context에 대해서만 truncate한다. question의 길이가 그만큼 길지 않기 때문이기도 하다.
+* overflowing_tokens와 offsets_mapping에 대한 값을 각각 변수로 저장한다. 이후, start와 end position이 담길 리스트를 생성하고 이를 dictionary로 매핑한다.
+* [for] 반복문을 돌며, 이 때 max_length로 truncation된 시퀀스별로 접근하게 된다.
+  * offsets은 `[(0, 0), (0, 1), (1, 2), (2, 3), (0, 0)]` 꼴의 데이터가 매번 담긴다.
+  * 각 토큰들의 input_ids와 cls를 기억한다.
+  * `sequence_ids`는 None, 0, 1의 값을 가지며 앞쪽 시퀀스는 0, 뒤쪽 시퀀스는 1을 반환하게 된다. None은 스페셜 토큰들이 반환하는 값이다. 이 값들을 변수로 저장한다.
+  * sample_mapping에 해당하는 context의 answer를 가져온다.
+  * [if] answer가 없는 경우는 현재 train_dataset에는 존재하지 않는다. 이는, retrieval로 가져온 data나 augmentation을 거친 data가 answer가 없을 수 있어서 존재하는 조건문인 듯 보인다. 이때 답이 없음을 가리키는 cls_index를 추가한다.
+  * [else] 만약 answer가 있을 때 `[{'answer_start': [235], 'text': ['하원']}`와 같은 꼴로 존재하며, 이 두 정보를 이용해 start_char와 end_char를 기억한다. 이 예에서는 start_char=235, end_char=237이 된다.
+  * [else] 두 개의 while문을 통해 sequence_ids가 1이 되는 지점을 찾는다. 현재 sequence_ids가 1이라는 뜻은 context에 해당하는 token을 찾겠다는 뜻이며 이는 context의 시작 위치와 끝 위치를 찾는 과정이다.
+  * [else-if] 정답의 시작(=start_char)은 무조건 start_index보다는 뒤에 있어야 하고 정답의 끝(=end_char)은 무조건 end_index보다는 앞에 있어야 한다. 그렇지 않으면(=not) cls_index를 추가한다.
+  * [else-else] 정답이 text의 span안에 있다면, text를 점점 answer에 가깝게 span을 줄여나간다. 제일 가깝게 줄였을 때 start_index와 end_index를 답으로 추가한다.
+  
+<br>
 
 ###
 > 
@@ -383,11 +416,16 @@ dataset.map으로 처음 적용되는 `prepare_train_features`에 대해 알아�
 
 ```
 
+<br>
+
 ###
 > 
 ```py
 
 ```
+
+<br>
+
 ###
 > 
 ```py
