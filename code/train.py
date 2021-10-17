@@ -120,8 +120,6 @@ def train_mrc(model, optimizer, scaler, scheduler, datasets, train_loader, valid
                 wandb.log({'global_step': global_step})
 
 
-# TODO model_test 위해 만들었으니 테스트 끝나고 지울 것
-# def main():
 def main(project_name=None, model_name_or_path=None):
     model_args, data_args, training_args = get_args()
 
@@ -184,13 +182,14 @@ def main(project_name=None, model_name_or_path=None):
 
 
 if __name__ == "__main__":
-    # TODO test 를 위한 세팅이므로 나중엔 원래대로 돌려놓을 것 처음 상태는 main() 이거 하나밖에 없음
-    # main()
-    test = {
-        'model_test': ['klue/roberta-small', 'klue/roberta-base', 'klue/roberta-large', 'klue/bert-base',
-                       'monologg/koelectra-base-v3-discriminator']
-    }
+    main()
 
-    for k, v in test.items():
-        for model_name in v:
-            main(project_name=k, model_name_or_path=model_name)
+    # 테스트 시에 사용했던 코드인데 혹시나 도움이 될까해서 코드 남겨놔요!
+    # test = {
+    #     'model_test': ['klue/roberta-small', 'klue/roberta-base', 'klue/roberta-large', 'klue/bert-base',
+    #                    'monologg/koelectra-base-v3-discriminator']
+    # }
+    #
+    # for k, v in test.items():
+    #     for model_name in v:
+    #         main(project_name=k, model_name_or_path=model_name)
