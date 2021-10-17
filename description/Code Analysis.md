@@ -12,9 +12,9 @@
 │　　├─── Train (작성 중)
 │　　├─── Postprocessing (작성 중)
 ├ Retrieval
-│　　├─── 작성 예정
+│　　├─── (작성 예정)
 └ Inference
-　 　├─── 작성 예정
+　 　├─── (작성 예정)
 ```
 
 ---
