@@ -26,6 +26,12 @@ class ModelArguments:
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
     )
+    use_pretrained_model: bool = field(
+        default=False,
+        metadata={
+            "help": "use_pretrained_model"
+        }
+    )
 
 
 @dataclass

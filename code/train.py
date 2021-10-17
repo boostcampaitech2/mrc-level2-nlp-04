@@ -75,7 +75,7 @@ def validation_per_steps(model, datasets, valid_loader, valid_dataset, training_
 
 
 def train_mrc(model, optimizer, scaler, scheduler, datasets, train_loader, valid_loader, valid_dataset,
-              training_args, data_args):
+              training_args, model_args, data_args):
     """
     train & validation 함수
     """
@@ -103,7 +103,8 @@ def train_mrc(model, optimizer, scaler, scheduler, datasets, train_loader, valid
                     valid_metrics = validation_per_steps(model, datasets, valid_loader, valid_dataset,
                                                          training_args, data_args)
                 if valid_metrics['exact_match'] > prev_em:
-                    torch.save(model, os.path.join(training_args.output_dir, f'{training_args.run_name}.pt'))
+                    torch.save(model, os.path.join(training_args.output_dir,
+                                                   f'{model_args.model_name_or_path.split("/")[-1]}.pt'))
                     prev_em = valid_metrics['exact_match']
                     prev_f1 = valid_metrics['f1']
                 wandb.log({
@@ -124,6 +125,8 @@ def train_mrc(model, optimizer, scaler, scheduler, datasets, train_loader, valid
 def main(project_name=None, model_name_or_path=None):
     model_args, data_args, training_args = get_args()
 
+    if project_name is not None:
+        training_args.project_name = project_name
     if model_name_or_path is not None:
         model_args.model_name_or_path = model_name_or_path
 
@@ -131,7 +134,8 @@ def main(project_name=None, model_name_or_path=None):
     set_seed_everything(training_args.seed)
 
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
-    training_args.output_dir = os.path.join(training_args.output_dir, project_name, model_name_or_path.split('/')[-1])
+    training_args.output_dir = os.path.join(training_args.output_dir, training_args.project_name,
+                                            model_args.model_name_or_path.split('/')[-1])
     training_args.per_device_train_batch_size = 16
     training_args.per_device_eval_batch_size = 128
     training_args.num_train_epochs = 10
@@ -140,12 +144,11 @@ def main(project_name=None, model_name_or_path=None):
     training_args.weight_decay = 0.01
     training_args.logging_steps = 100
     training_args.fp16 = True
-    training_args.project_name = project_name
     print(training_args)
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
 
-    tokenizer, model_config, model = get_models(model_args)
+    tokenizer, model_config, model = get_models(training_args, model_args)
     datasets, train_loader, valid_loader, train_dataset, valid_dataset = get_data(training_args, model_args,
                                                                                   data_args, tokenizer)
     optimizer, scaler, scheduler = get_optimizers(model, train_loader, training_args)
@@ -176,7 +179,7 @@ def main(project_name=None, model_name_or_path=None):
                )
 
     train_mrc(model, optimizer, scaler, scheduler, datasets, train_loader, valid_loader, valid_dataset,
-              training_args, data_args)
+              training_args, model_args, data_args)
     wandb.join()
 
 

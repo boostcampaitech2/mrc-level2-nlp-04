@@ -20,6 +20,7 @@ import collections
 import json
 import logging
 import os
+from copy import deepcopy
 from typing import Optional, Tuple, Any
 
 import numpy as np
@@ -39,6 +40,7 @@ from arguments import (
     DataTrainingArguments,
 )
 from data_processing import DataProcessor
+from utils_retrieval import run_sparse_retrieval
 
 logger = logging.getLogger(__name__)
 
@@ -388,56 +390,94 @@ def set_seed_everything(seed):
     return None
 
 
-def get_models(model_args):
-    model_config = AutoConfig.from_pretrained(
-        model_args.config_name
-        if model_args.config_name is not None
-        else model_args.model_name_or_path,
-    )
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name is not None
-        else model_args.model_name_or_path,
-        # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
-        # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
-        # rust version이 비교적 속도가 빠릅니다.
-        use_fast=True,
-    )
-    model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=model_config,
-    )
+def get_models(training_args, model_args):
+    if not training_args.do_predict:
+        model_config = AutoConfig.from_pretrained(
+            model_args.config_name
+            if model_args.config_name is not None
+            else model_args.model_name_or_path,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_args.tokenizer_name
+            if model_args.tokenizer_name is not None
+            else model_args.model_name_or_path,
+            # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
+            # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
+            # rust version이 비교적 속도가 빠릅니다.
+            use_fast=True,
+        )
+        model = AutoModelForQuestionAnswering.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=model_config,
+        )
 
-    return tokenizer, model_config, model
+        if model_args.use_pretrained_model:
+            pretrained_model = torch.load(os.path.join(training_args.output_dir,
+                                                       f"{model_args.model_name_or_path.split('/')[-1]}.pt"))
+            pretrained_model_state = deepcopy(pretrained_model.state_dict())
+            model.load_state_dict(pretrained_model_state)
+            del pretrained_model
+
+        return tokenizer, model_config, model
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_args.tokenizer_name,
+            use_fast=True
+        )
+        model = torch.load(model_args.model_name_or_path)
+
+        return tokenizer, model
 
 
 def get_data(training_args, model_args, data_args, tokenizer):
-    '''train과 validation의 dataloader와 dataset를 반환하는 함수'''
+    '''train, validation, test의 dataloader와 dataset를 반환하는 함수'''
     datasets = load_from_disk(data_args.dataset_name)
     print(datasets)
 
-    train_dataset = datasets['train']
-    valid_dataset = datasets['validation']
-
-    train_column_names = train_dataset.column_names
-    valid_column_names = valid_dataset.column_names
-
     data_processor = DataProcessor(tokenizer, model_args, data_args)
-    train_dataset = data_processor.train_tokenizer(train_dataset, train_column_names)
-    valid_dataset = data_processor.valid_tokenizer(valid_dataset, valid_column_names)
-    valid_dataset_for_model = valid_dataset.remove_columns(['example_id', 'offset_mapping'])
 
     data_collator = DataCollatorWithPadding(
         tokenizer, pad_to_multiple_of=(8 if training_args.fp16 else None)
     )
-    train_loader = DataLoader(train_dataset, collate_fn=data_collator,
-                              batch_size=training_args.per_device_train_batch_size)
 
-    valid_loader = DataLoader(valid_dataset_for_model, collate_fn=data_collator,
-                              batch_size=training_args.per_device_eval_batch_size)
+    if not training_args.do_predict:
+        train_dataset = datasets['train']
+        valid_dataset = datasets['validation']
 
-    return datasets, train_loader, valid_loader, train_dataset, valid_dataset
+        train_column_names = train_dataset.column_names
+        valid_column_names = valid_dataset.column_names
+
+        train_dataset = data_processor.train_tokenizer(train_dataset, train_column_names)
+        valid_dataset = data_processor.valid_tokenizer(valid_dataset, valid_column_names)
+        valid_dataset_for_model = valid_dataset.remove_columns(['example_id', 'offset_mapping'])
+
+        train_loader = DataLoader(train_dataset, collate_fn=data_collator,
+                                  batch_size=training_args.per_device_train_batch_size)
+
+        valid_loader = DataLoader(valid_dataset_for_model, collate_fn=data_collator,
+                                  batch_size=training_args.per_device_eval_batch_size)
+
+        return datasets, train_loader, valid_loader, train_dataset, valid_dataset
+    else:
+        # test data 에는 context 가 없으므로 retrieval 해서 추가해줌
+        datasets = run_sparse_retrieval(
+            tokenizer.tokenize,
+            datasets,
+            training_args,
+            data_args,
+        )
+        # test data 폴더에 들어있는 데이터에서도 validation 으로 되어있음
+        test_dataset = datasets['validation']
+
+        test_column_names = test_dataset.column_names
+
+        test_dataset = data_processor.valid_tokenizer(test_dataset, test_column_names)
+        test_dataset_for_model = test_dataset.remove_columns(['example_id', 'offset_mapping'])
+
+        test_loader = DataLoader(test_dataset_for_model, collate_fn=data_collator, batch_size=1)
+
+        return datasets, test_loader, test_dataset
 
 
 def get_optimizers(model, train_loader, training_args):
