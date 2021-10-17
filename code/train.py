@@ -1,137 +1,21 @@
 import logging
 import os
-import random
 import sys
 
-from typing import List, Callable, NoReturn, NewType, Any
-import dataclasses
-
-import numpy as np
 import torch
 import wandb
-from datasets import load_metric, load_from_disk, Dataset, DatasetDict
-from torch.cuda.amp import GradScaler, autocast
-from torch.utils.data import DataLoader
+from datasets import load_metric
+from torch.cuda.amp import autocast
 from tqdm import trange, tqdm
 
-from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer, AdamW, \
-    get_linear_schedule_with_warmup
-
-from transformers import (
-    DataCollatorWithPadding,
-    EvalPrediction,
-    HfArgumentParser,
-    TrainingArguments,
-    set_seed,
-    EarlyStoppingCallback,
-)
-
-from tokenizers import Tokenizer
-from tokenizers.models import WordPiece
-
-from data_processing import DataProcessor
-from utils_qa import postprocess_qa_predictions, check_no_error, AverageMeter
-from trainer_qa import QuestionAnsweringTrainer
-from retrieval import SparseRetrieval
-
-from arguments import (
-    ModelArguments,
-    DataTrainingArguments,
-)
+from utils_qa import AverageMeter, post_processing_function, create_and_fill_np_array, get_args, set_seed_everything, \
+    get_models, get_data, get_optimizers
 
 logger = logging.getLogger(__name__)
 
 # avoid huggingface/tokenizers: The current process just got forked, after parallelism has already been used.
 # Disabling parallelism to avoid deadlocks...
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-
-def get_args():
-    '''
-    훈련 시 입력한 각종 Argument를 반환하는 함수
-    '''
-    parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments)
-    )
-    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    return model_args, data_args, training_args
-
-
-def set_seed_everything(seed):
-    '''Random Seed를 고정하는 함수'''
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
-    set_seed(seed)
-
-    return None
-
-
-def get_models(model_args):
-    model_config = AutoConfig.from_pretrained(
-        model_args.config_name
-        if model_args.config_name is not None
-        else model_args.model_name_or_path,
-    )
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name is not None
-        else model_args.model_name_or_path,
-        # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
-        # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
-        # rust version이 비교적 속도가 빠릅니다.
-        use_fast=True,
-    )
-    model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=model_config,
-    )
-
-    return tokenizer, model_config, model
-
-
-def get_data(training_args, model_args, data_args, tokenizer):
-    '''train과 validation의 dataloader와 dataset를 반환하는 함수'''
-    datasets = load_from_disk(data_args.dataset_name)
-    print(datasets)
-
-    train_dataset = datasets['train']
-    valid_dataset = datasets['validation']
-
-    train_column_names = train_dataset.column_names
-    valid_column_names = valid_dataset.column_names
-
-    data_processor = DataProcessor(tokenizer, model_args, data_args)
-    train_dataset = data_processor.train_tokenizer(train_dataset, train_column_names)
-    valid_dataset = data_processor.valid_tokenizer(valid_dataset, valid_column_names)
-    valid_dataset_for_model = valid_dataset.remove_columns(['example_id', 'offset_mapping'])
-
-    data_collator = DataCollatorWithPadding(
-        tokenizer, pad_to_multiple_of=(8 if training_args.fp16 else None)
-    )
-    train_loader = DataLoader(train_dataset, collate_fn=data_collator,
-                              batch_size=training_args.per_device_train_batch_size)
-
-    valid_loader = DataLoader(valid_dataset_for_model, collate_fn=data_collator,
-                              batch_size=training_args.per_device_eval_batch_size)
-
-    return datasets, train_loader, valid_loader, train_dataset, valid_dataset
-
-
-def get_optimizers(model, train_loader, training_args):
-    optimizer = AdamW(model.parameters(), lr=training_args.learning_rate, eps=training_args.adam_epsilon)
-    scaler = GradScaler()
-    num_training_steps = len(train_loader) // training_args.gradient_accumulation_steps * training_args.num_train_epochs
-    scheduler = get_linear_schedule_with_warmup(optimizer,
-                                                num_warmup_steps=training_args.warmup_steps,
-                                                num_training_steps=num_training_steps)
-
-    return optimizer, scaler, scheduler
 
 
 def train_per_step(model, optimizer, scaler, batch, training_args):
@@ -153,7 +37,7 @@ def train_per_step(model, optimizer, scaler, batch, training_args):
     return loss.item()
 
 
-def validation_per_steps(epoch, model, datasets, valid_loader, valid_dataset, training_args, model_args, data_args):
+def validation_per_steps(model, datasets, valid_loader, valid_dataset, training_args, data_args):
     """
     매 logging_step 마다 검증을 하는 함수
     """
@@ -190,85 +74,11 @@ def validation_per_steps(epoch, model, datasets, valid_loader, valid_dataset, tr
     return valid_metrics
 
 
-# https://github.com/huggingface/transformers/blob/master/examples/pytorch/question-answering/run_qa_beam_search_no_trainer.py
-def create_and_fill_np_array(start_or_end_logits, dataset, max_len):
-    """
-    Create and fill numpy array of size len_of_validation_data * max_length_of_output_tensor
-
-    Args:
-        start_or_end_logits(:obj:`tensor`):
-            This is the output predictions of the model. We can only enter either start or end logits.
-        eval_dataset: Evaluation dataset
-        max_len(:obj:`int`):
-            The maximum length of the output tensor. ( See the model.eval() part for more details )
-    """
-
-    step = 0
-    # create a numpy array and fill it with -100.
-    logits_concat = np.full((len(dataset), max_len), -100, dtype=np.float32)
-    # Now since we have create an array now we will populate it with the outputs gathered using accelerator.gather
-    for i, output_logit in enumerate(start_or_end_logits):  # populate columns
-        # We have to fill it such that we have to take the whole tensor and replace it on the newly created array
-        # And after every iteration we have to change the step
-
-        batch_size = output_logit.shape[0]
-        cols = output_logit.shape[1]
-        if step + batch_size < len(dataset):
-            logits_concat[step: step + batch_size, :cols] = output_logit
-        else:
-            logits_concat[step:, :cols] = output_logit[: len(dataset) - step]
-
-        step += batch_size
-
-    return logits_concat
-
-
-def post_processing_function(examples, features, predictions, datasets, training_args, data_args):
-    # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
-    predictions = postprocess_qa_predictions(
-        examples=examples,
-        features=features,
-        predictions=predictions,
-        max_answer_length=data_args.max_answer_length,
-        output_dir=training_args.output_dir,
-    )
-    # Metric을 구할 수 있도록 Format을 맞춰줍니다.
-    formatted_predictions = [
-        {"id": k, "prediction_text": v} for k, v in predictions.items()
-    ]
-    if training_args.do_predict:
-        return formatted_predictions
-
-    references = [
-        {"id": ex["id"], "answers": ex['answers']}
-        for ex in datasets["validation"]
-    ]
-    return EvalPrediction(predictions=formatted_predictions, label_ids=references)
-
-
-def train_mrc(
-        model,
-        optimizer,
-        scaler,
-        scheduler,
-        datasets,
-        train_loader,
-        valid_loader,
-        train_dataset,
-        valid_dataset,
-        training_args,
-        model_args,
-        data_args,
-        tokenizer
-) -> NoReturn:
+def train_mrc(model, optimizer, scaler, scheduler, datasets, train_loader, valid_loader, valid_dataset,
+              training_args, data_args):
     """
     train & validation 함수
     """
-    # 오류가 있는지 확인합니다.
-    last_checkpoint, max_seq_length = check_no_error(
-        data_args, training_args, datasets, tokenizer
-    )
-
     prev_f1 = 0
     prev_em = 0
     global_step = 0
@@ -290,8 +100,8 @@ def train_mrc(
             # validation phase
             if global_step % training_args.logging_steps == 0:
                 with torch.no_grad():
-                    valid_metrics = validation_per_steps(epoch, model, datasets, valid_loader, valid_dataset,
-                                                         training_args, model_args, data_args)
+                    valid_metrics = validation_per_steps(model, datasets, valid_loader, valid_dataset,
+                                                         training_args, data_args)
                 if valid_metrics['exact_match'] > prev_em:
                     torch.save(model, os.path.join(training_args.output_dir, f'{training_args.run_name}.pt'))
                     prev_em = valid_metrics['exact_match']
@@ -365,8 +175,8 @@ def main(project_name=None, model_name_or_path=None):
                reinit=True,
                )
 
-    train_mrc(model, optimizer, scaler, scheduler, datasets, train_loader, valid_loader, train_dataset,
-              valid_dataset, training_args, model_args, data_args, tokenizer)
+    train_mrc(model, optimizer, scaler, scheduler, datasets, train_loader, valid_loader, valid_dataset,
+              training_args, data_args)
     wandb.join()
 
 
