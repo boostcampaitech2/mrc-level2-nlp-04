@@ -142,7 +142,7 @@ model_name_or_path: str = field(
   * eval_retrieval : retrieval 할 때 sparse embedding 방식을 사용할 것인지
   * num_clusters : 비슷한 passage끼리 모아놓은 군집을 몇개로 설정할 지
   * tok_k_retrieval : 상위 몇개의 passage를 retrieve 할지
-  * use_faiss : passage retrival을 faiss를 사용해서 할지
+  * use_faiss : passage retrieval을 faiss를 사용해서 할지
 ---
 
 > train.py main 53~63
@@ -239,9 +239,13 @@ def run_mrc(
     )
 ```
 * `run_mrc` 함수가 정의된다. `do_train`에 따라 train 또는 validation의 데이터셋의 column이 선택된다.
+* 여기서, do_train과 do_eval이 모두 True여도 하나의 flow로만 흐르게 되는데, 우리의 dataset이 column 구성이 동일하기 때문에 상관이 없다. 따라서, 만약 retrieval을 적용해야 한다면 이 부분을 꼭 신경써야 될 것이다.
+* 아래 캡처는 실제로 구성이 동일함을 확인하기 위해 코드를 실행한 모습
+![](https://images.velog.io/images/sangmandu/post/11909ee8-896f-4595-8c24-14b2dbcb2a8e/image.png)
 * 기본적으로 question, context, answer에 대한 컬럼명을 이름 그대로 지으며, 만약 데이터셋에서 따로 사용하는 컬럼명이 있다면 그것을 따른다.
 * padding을 오른쪽에 추가한다.
 * argument와 dataset, tokenizer에 오류가 있는지 확인하며 이는 `check_no_error` 함수로 검사한다. 오류가 존재하면 에러가 발생되며 존재하지 않으면 튜플 형태로 `checkpoint`와 `max_seq_length`가 반환된다.
+
 
 ---
 
@@ -308,7 +312,7 @@ def check_no_error(
     return last_checkpoint, max_seq_length
 ```
 * `isinstance(A, B)`는 A가 Class B의 인스턴스인지를 검사하는 함수이며, tansformers의 AutoTokenizer.from_pretrained로 로딩되는 모든 토크나이저(단 Fast 버전으로 로딩되었다고 가정한다)는 PreTrainedTokenizerFast를 상속받기 때문에 그렇지 않으면 에러가 발생된다. 위쪽에서 tokenizer를 로드할 때 `use_fast=True`로 설정했다.
-* `data_args.max_seq_length`는 토크나이징을 거친 최대 input sequence 길이를 DataTrainingArguments에서 정의해준 것으로 모델의 max_seq_length는 언제든지 변경가능하고 data의 arg보다 커도 문제가 없지만 data의 max_seq_length가 더 크면 문제가 되므로 이에 대한 예외처리를 해준다.
+* `data_args.max_seq_length`는 토크나이징을 거칠 때 우리가 설정하는 최대 input sequence 길이이다. 이것은 `arguments.py`에서 `DataTrainingArguments`에서 정의해주었는데 모델마다 max_seq_length가 다르다보니까(=모델마다 최대로 tokenizing 할 수 있는 길이의 제약이 있다는 뜻. 쉽게 말해 모델을 500개 까지밖에 토크나이징을 못하는데 우리가 1000개로 설정해버리면 500개로 강제로 낮추겠다는 뜻) 이에 대한 상한선을 맞춰주기 위한 작업이다. 그래서 만약 모델의 범위보다 클 경우에는 이를 min으로 제약하고(물론 항상 min을 적용한다) 경고를 출력한다.
 * 검증을 위한 데이터셋이 존재하지 않으면 에러를 발생시킨다.
 
 ---
@@ -671,7 +675,7 @@ class QuestionAnsweringTrainer(Trainer):
                 predictions=formatted_predictions, label_ids=references
             )
 ```
-* 트레이너에 입력되는 후처리 함수이다. 이에 대한 자세한 인자 설명은 `postporcess_qa_predictions`의 주석으로 달려있다. 이 함수를 통해 얻은 predictions를 id와 text의 key를 가진 딕셔너리 형태로 만든다.
+* 트레이너에 입력되는 후처리 함수이다. 이에 대한 자세한 인자 설명은 `postprocess_qa_predictions`의 주석으로 달려있다. 이 함수를 통해 얻은 predictions를 id와 text의 key를 가진 딕셔너리 형태로 만든다.
 * 학습으로 실행된 것이면 id와 text로 이루어진 포맷을 반환하고, 검증으로 실행된 것이면 validation dataset의 라벨과 포맷을 함께 EvalPrediction Class로 넘겨준다. 이는 나중에 `p.predictions`, `p.label_ids` 와 같은 꼴로 사용할 수 있다. 이는 test는 정답을 모르기에 예측만을 가지고 사용하고 valid는 정답과 비교해 metrics를 출력하기 위함이다.
 * 중요한 것은 이 함수는 train이 아닌, valid와 test dataset만이 적용된다는 것이다. 이러한 이유는, train은 후처리를 통해 평가 지표를 비교하지 않고, start pos와 end pos에 대한 loss로 update되기 때문이다. 실제로 train.py에서는 training_args.do_predict를 사용할 일이 없으며 이에 대해서는 inference와 동일한 코드 사용을 위해 추가되어 있는 것으로 보인다. (그래서, train.py보다는 utils_qa쪽에 있는 것이 더 자연스럽고 재사용성이 좋다. 현재는 inference.py에도 동일한 코드가 추가되어있기 때문)
 
@@ -763,8 +767,9 @@ def postprocess_qa_predictions(
 * prediction은 (start_pos, end_pos)라는 튜플형으로 존재해야 하며 이에 대한 잘못된 포맷사용을 막아준다. 
 * 또, 전체 예측의 개수와 실제 데이터의 개수가 동일해야 한다.
 * `example_id_to_index`는 단순히 각각의 example을 0부터 indexing하기 위한 변수이다. `example_id`는 mrc-1-000067와 같은 값을 가지며 이들에 대한 순서를 메기기 위해 사용한다.
-* `features_per_example`은 example과 feature를 mapping하기 위한 함수이다. example과 feature는 개수가 다르고 순서가 다를 수 있기 때문에 이를 이어준다. 왜냐하면 feature는 example에서 max_seq_length로 split(=truncate)되었기 때문.
-* 순서를 고려하는 OrderedDict를 생성합니다. all_predictions는
+* `features_per_example`은 example과 feature를 mapping하기 위한 함수이다. example과 feature는 개수가 다르고 순서가 다를 수 있기 때문에 이를 이어준다. 왜냐하면 feature는 example에서 max_seq_length로 split(=truncate)되었기 때문. 그래서 하나의 example key에 대해서 여러개의 feature value가 담긴다.
+* 순서를 고려하는 OrderedDict를 생성한다. 1개의 example에 대한 여러개의 feature가 있고 이 중에서 1개의 feature에서 answer라고 예측되는 위치를 all_predictions에 담는다. 또 정답을 n개만큼 선택하고 싶다면 이들을 all_nbest에 담는다. `nbest = 1` 이라면 이 둘은 동일하다.
+* 정답이 없는 데이터셋이 존재한다면 이를 위한 dict도 생성한다.
 
 ---
 
@@ -812,8 +817,11 @@ def postprocess_qa_predictions(
             end_indexes = np.argsort(end_logits)[-1 : -n_best_size - 1 : -1].tolist()
 ```
 * 전체 example에 대한 loop를 돌며 features에 접근한다.
+* prelim_predictions는 preliminary를 뜻하는 예비 변수이다. 아직 확정 predictions가 아니라는 뜻. 이 변수에 임시로 predictions들이 들어가며 이 중에서 return할 predictions를 확정한다.
+* 초기 min_null_prediction은 CLS토큰을 가리키며 이에 대한 점수를 가지고 있다. 이후, 다른 prediction들과 비교하면서 min_null_prediction이 갱신된다.
 * 각 feature에 대한 loop를 돌며 feature(=truncated context)의 (answer이라고 생각되는)start와 end의 점수를 계속 쌓는다. 계속 점수들이 쌓일텐데, 이 중에 n_best_size만큼만을 선택해서 `tolsit()` 한 최종 결과로 `start_indexes`와 `end_indexes`를 가지게된다. 
-
+* `offset_mapping`은 features의 token들의 index의 시작과 끝을 나타낸다.
+* `token_is_max_context`는 features의 key중 하나인데 우리 코드에서는 사용하지 않았다. feature는 여러개의 토큰으로 이루어져 있는데 이 중 정답에 대한 정보를 가장 많이 담고 있다고 여겨지는 maximum token을 하나 지정한다. 해당 token의 이 key는 True되어 있으며 나머지 token은 False로 되어있다. 이 부분을 활용할 수 있는 여지가 있다.
 ---
 
 > utils_qa.py postprocess_qa_predictions 170~202
@@ -853,7 +861,13 @@ def postprocess_qa_predictions(
                         }
                     )
 ```
-* 
+* 이에 대한 설명을 먼저 하고 코드를 설명한다. 한 question에 대해서 max_seq_length로 나눈 여러 context들이 존재하고 이에 대해 전처리한 결과를 개별로 feature라고 한다. 이 때, 한 feature는 context의 subset이고, 여러 개의 token들로 이루어져 있다. 이 token들은 각각 start_position과 end_position에 대한 점수를 가지고 있으며 이것이 start_logits와 end_logits이다. 만약 우리가 4개의 predictiond르 가지려고 한다. 그렇다면 start_logits에서 4개, end_logits에서 4개를 뽑는다. 그리고 이에 대한 이중 반복문을 돌려 각각의 경우를 얻는다. 총 16개의 경우이지만 조건에 따라 거르기 때문에 16개 이하의 경우의 수를 가진다. 이들은 추후에 score = start_logit + end_logit순으로 정렬되어 4개가 선택될 것이다.
+* 다시 코드 설명.
+* start index와 enx index가 mapping의 범위 밖이라면 처리하지 않는다. (mapping은 각 토큰들의 인덱스를 나타내는데, 이 mapping의 개수보다 index가 클 수는 없다.) 이는 정답은 항상 context에서 찾겠다는 뜻. 
+* end와 start가 뒤바뀌어도 continue.
+* 만약에 `token_is_max_context`를 사용하고 해당 토큰이 해당 키를 False로 가지고 있어도 continue.
+* 조건을 모두 만족한 start_index-end_index는 `prelim_predictions`에 추가되며 이 때 answer span의 start와 end가 `offsets`에 저장된다. 그리고 총합 점수와 각각의 점수도 저장한다.
+* features 반복문 끝.
 
 ---
 
@@ -900,6 +914,12 @@ def postprocess_qa_predictions(
         for prob, pred in zip(probs, predictions):
             pred["probability"] = prob
 ```
+* 만약 정답이 없는 데이터셋을 사용할 경우 `prelim`에 `min_null_prediction`을 추가한다. 이 값은, 매번 갱신되면서 마지막으로는 제일 낮은 점수의 값을 가지게 된다. 다만 이때의 offset은 늘 CLS토큰을 가리키고 있다.
+* 우리가 원하는 n_best만큼 predictiond를 얻으며 이 기준은 score가 높은 순이다. version2를 사용할 경우 min_null_prediction이 score기준으로 밀렸다면 이를 또 추가해준다.
+* 각 example의 지문에서 predict에 해당하는 offset만큼을 pred['text']로 추가한다.
+* rare edge case는 매우 낮은 확률로 발생하는 예외이며 이는 실제로 모든 토큰이 CLS토큰보다 확률이 낮은 경우이다. 이 때를 위해 fake prediction을 생성한다.
+* 각 예측의 점수를 softmax로 얻고 probability라는 key로 갖는다.
+
 
 ---
 
@@ -928,6 +948,9 @@ def postprocess_qa_predictions(
             else:
                 all_predictions[example["id"]] = best_non_null_pred["text"]
 ```
+* version2가 아니면 all_prediction을 0번째 text로 지정한다.(0번째는 score가 가장 높다)
+* version2라면 null이 아닌 예측을 먼저 찾는다. 앞에서부터 먼저 찾아지는 예측이 best 예측이다.
+* null score가 best score보다 점수가 높다면 no answer를 의미하는 ""를 지정하며 그것이 아니라면 best answer를 지정한다.
 
 ---
 
@@ -947,6 +970,7 @@ def postprocess_qa_predictions(
             for pred in predictions
         ]
 ```
+* pred의 아이템 중 key는 초기 ['offsets', 'score', 'start_logit', 'end_logit'] 에서 pop과 insert과정을 거쳐 ['start_logit', 'end_logit', 'text', 'probability']로 구성되어있다. 이 중 각 value가 numpy float type이라면 이를 python의 float로 casting한다.
 
 ---
 
@@ -992,7 +1016,11 @@ def postprocess_qa_predictions(
 
     return all_predictions
 ```
-
+* output_dir이 없으면 에러를 발생시킨다.
+* 있다면,
+  * prediction에 대한 dict와 n_best에 대한 dict를 json파일로 저장할 path를 지정한다.
+  * `json.dump()`는 json 포맷으로 데이터를 저장하겠다는 뜻이며 `json.dumps()`는 저장한 이후에도 이를 사용하기 위해 반환받겠다는 뜻. 저장 후 반환해서 txt파일로 한번 더 저장하게 된다.
+* 이후 best-1 예측을 반환한다.
 ---
 
 <br>
@@ -1004,8 +1032,39 @@ def postprocess_qa_predictions(
 ###
 > 
 
-```py
+```py retrieval retrieval
+if __name__ == "__main__":
 
+    import argparse
+
+    parser = argparse.ArgumentParser(description="")
+    parser.add_argument(
+        "--dataset_name", metavar="./data/train_dataset", type=str, help=""
+    )
+    parser.add_argument(
+        "--model_name_or_path",
+        metavar="bert-base-multilingual-cased",
+        type=str,
+        help="",
+    )
+    parser.add_argument("--data_path", metavar="./data", type=str, help="")
+    parser.add_argument(
+        "--context_path", metavar="wikipedia_documents", type=str, help=""
+    )
+    parser.add_argument("--use_faiss", metavar=False, type=bool, help="")
+
+    args = parser.parse_args()
+
+    # Test sparse
+    org_dataset = load_from_disk(args.dataset_name)
+    full_ds = concatenate_datasets(
+        [
+            org_dataset["train"].flatten_indices(),
+            org_dataset["validation"].flatten_indices(),
+        ]
+    )  # train dev 를 합친 4192 개 질문에 대해 모두 테스트
+    print("*" * 40, "query dataset", "*" * 40)
+    print(full_ds)
 ```
 
 ---
