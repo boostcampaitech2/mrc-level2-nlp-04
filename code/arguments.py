@@ -12,7 +12,7 @@ class TrainingArguments(OriginTrainingArguments):
     )
     project_name: Optional[str] = field(
         # PR 하실때는 None 으로 바꿔서 올려주세요! 얘의 목적은 wandb project name 설정을 위함입니다.
-        default='function_modularity',
+        default=None,
         metadata={"help": "wandb project name"},
     )
     run_name: Optional[str] = field(
@@ -55,9 +55,8 @@ class TrainingArguments(OriginTrainingArguments):
             )
         },
     )
-    # 테스트를 위함이므로 최종 PR 시에는 100으로 변경할 것
-    eval_steps: int = field(default=1, metadata={"help": "Run an evaluation every X steps."})
-    save_steps: int = field(default=1, metadata={"help": "Save checkpoint every X updates steps."})
+    eval_steps: int = field(default=100, metadata={"help": "Run an evaluation every X steps."})
+    save_steps: int = field(default=100, metadata={"help": "Save checkpoint every X updates steps."})
 
 
 @dataclass
