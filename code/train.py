@@ -21,7 +21,8 @@ from transformers import (
 from tokenizers import Tokenizer
 from tokenizers.models import WordPiece
 
-from utils_qa import postprocess_qa_predictions, check_no_error, get_args, set_seed_everything, get_models, get_data
+from utils_qa import postprocess_qa_predictions, check_no_error, get_args, set_seed_everything, get_models, get_data, \
+    post_processing_function, compute_metrics
 from trainer_qa import QuestionAnsweringTrainer
 from retrieval import SparseRetrieval
 
@@ -85,37 +86,6 @@ def run_mrc(
     last_checkpoint, max_seq_length = check_no_error(
         data_args, training_args, datasets, tokenizer
     )
-
-    # Post-processing:
-    def post_processing_function(examples, features, predictions, training_args):
-        # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
-        predictions = postprocess_qa_predictions(
-            examples=examples,
-            features=features,
-            predictions=predictions,
-            max_answer_length=data_args.max_answer_length,
-            output_dir=training_args.output_dir,
-        )
-        # Metric을 구할 수 있도록 Format을 맞춰줍니다.
-        formatted_predictions = [
-            {"id": k, "prediction_text": v} for k, v in predictions.items()
-        ]
-        if training_args.do_predict:
-            return formatted_predictions
-
-        elif training_args.do_eval:
-            references = [
-                {"id": ex["id"], "answers": ex['answers']}
-                for ex in datasets["validation"]
-            ]
-            return EvalPrediction(
-                predictions=formatted_predictions, label_ids=references
-            )
-
-    metric = load_metric("squad")
-
-    def compute_metrics(p: EvalPrediction):
-        return metric.compute(predictions=p.predictions, references=p.label_ids)
 
     # Trainer 초기화
     trainer = QuestionAnsweringTrainer(

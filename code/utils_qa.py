@@ -31,9 +31,9 @@ import torch
 import random
 from transformers import is_torch_available, PreTrainedTokenizerFast, HfArgumentParser, AutoConfig, AutoTokenizer, \
     AutoModelForQuestionAnswering, DataCollatorWithPadding
-from transformers.trainer_utils import get_last_checkpoint
+from transformers.trainer_utils import get_last_checkpoint, EvalPrediction
 
-from datasets import DatasetDict, load_from_disk
+from datasets import DatasetDict, load_from_disk, load_metric
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
@@ -376,6 +376,8 @@ def get_args():
 
     if training_args.project_name is not None:
         training_args.output_dir = os.path.join(training_args.output_dir, training_args.project_name)
+    # post_processing_function 에서 사용하기 위해 추가
+    training_args.max_answer_length = data_args.max_answer_length
     print(training_args)
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -483,3 +485,35 @@ def get_data(training_args, model_args, data_args, tokenizer):
         test_loader = DataLoader(test_dataset_for_model, collate_fn=data_collator, batch_size=1)
 
         return datasets, test_loader, test_dataset
+
+
+# Post-processing:
+def post_processing_function(examples, features, predictions, training_args):
+    # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
+    predictions = postprocess_qa_predictions(
+        examples=examples,
+        features=features,
+        predictions=predictions,
+        max_answer_length=training_args.max_answer_length,
+        output_dir=training_args.output_dir,
+    )
+    # Metric을 구할 수 있도록 Format을 맞춰줍니다.
+    formatted_predictions = [
+        {"id": k, "prediction_text": v} for k, v in predictions.items()
+    ]
+    if training_args.do_predict:
+        return formatted_predictions
+
+    elif training_args.do_eval:
+        references = [
+            {"id": ex["id"], "answers": ex['answers']}
+            for ex in examples
+        ]
+        return EvalPrediction(
+            predictions=formatted_predictions, label_ids=references
+        )
+
+
+metric = load_metric("squad")
+def compute_metrics(p: EvalPrediction):
+    return metric.compute(predictions=p.predictions, references=p.label_ids)
