@@ -34,7 +34,7 @@ class QuestionAnsweringTrainer(Trainer):
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
 
-    def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None):
+    def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix='eval'):
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
         eval_examples = self.eval_examples if eval_examples is None else eval_examples
@@ -50,6 +50,7 @@ class QuestionAnsweringTrainer(Trainer):
                 # self.args.prediction_loss_only
                 prediction_loss_only=True if compute_metrics is None else None,
                 ignore_keys=ignore_keys,
+                metric_key_prefix=metric_key_prefix,
             )
         finally:
             self.compute_metrics = compute_metrics

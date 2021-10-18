@@ -37,7 +37,6 @@ from arguments import (
     TrainingArguments,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -59,16 +58,16 @@ def set_seed(seed: int = 42):
 
 
 def postprocess_qa_predictions(
-    examples,
-    features,
-    predictions: Tuple[np.ndarray, np.ndarray],
-    version_2_with_negative: bool = False,
-    n_best_size: int = 20,
-    max_answer_length: int = 30,
-    null_score_diff_threshold: float = 0.0,
-    output_dir: Optional[str] = None,
-    prefix: Optional[str] = None,
-    is_world_process_zero: bool = True,
+        examples,
+        features,
+        predictions: Tuple[np.ndarray, np.ndarray],
+        version_2_with_negative: bool = False,
+        n_best_size: int = 20,
+        max_answer_length: int = 30,
+        null_score_diff_threshold: float = 0.0,
+        output_dir: Optional[str] = None,
+        prefix: Optional[str] = None,
+        is_world_process_zero: bool = True,
 ):
     """
     Post-processes : qa model의 prediction 값을 후처리하는 함수
@@ -102,7 +101,7 @@ def postprocess_qa_predictions(
             이 프로세스가 main process인지 여부(logging/save를 수행해야 하는지 여부를 결정하는 데 사용됨)
     """
     assert (
-        len(predictions) == 2
+            len(predictions) == 2
     ), "`predictions` should be a tuple with two elements (start_logits, end_logits)."
     all_start_logits, all_end_logits = predictions
 
@@ -151,8 +150,8 @@ def postprocess_qa_predictions(
             # minimum null prediction을 업데이트 합니다.
             feature_null_score = start_logits[0] + end_logits[0]
             if (
-                min_null_prediction is None
-                or min_null_prediction["score"] > feature_null_score
+                    min_null_prediction is None
+                    or min_null_prediction["score"] > feature_null_score
             ):
                 min_null_prediction = {
                     "offsets": (0, 0),
@@ -163,31 +162,31 @@ def postprocess_qa_predictions(
 
             # `n_best_size`보다 큰 start and end logits을 살펴봅니다.
             start_indexes = np.argsort(start_logits)[
-                -1 : -n_best_size - 1 : -1
-            ].tolist()
+                            -1: -n_best_size - 1: -1
+                            ].tolist()
 
-            end_indexes = np.argsort(end_logits)[-1 : -n_best_size - 1 : -1].tolist()
+            end_indexes = np.argsort(end_logits)[-1: -n_best_size - 1: -1].tolist()
 
             for start_index in start_indexes:
                 for end_index in end_indexes:
                     # out-of-scope answers는 고려하지 않습니다.
                     if (
-                        start_index >= len(offset_mapping)
-                        or end_index >= len(offset_mapping)
-                        or offset_mapping[start_index] is None
-                        or offset_mapping[end_index] is None
+                            start_index >= len(offset_mapping)
+                            or end_index >= len(offset_mapping)
+                            or offset_mapping[start_index] is None
+                            or offset_mapping[end_index] is None
                     ):
                         continue
                     # 길이가 < 0 또는 > max_answer_length인 answer도 고려하지 않습니다.
                     if (
-                        end_index < start_index
-                        or end_index - start_index + 1 > max_answer_length
+                            end_index < start_index
+                            or end_index - start_index + 1 > max_answer_length
                     ):
                         continue
                     # 최대 context가 없는 answer도 고려하지 않습니다.
                     if (
-                        token_is_max_context is not None
-                        and not token_is_max_context.get(str(start_index), False)
+                            token_is_max_context is not None
+                            and not token_is_max_context.get(str(start_index), False)
                     ):
                         continue
                     prelim_predictions.append(
@@ -214,7 +213,7 @@ def postprocess_qa_predictions(
 
         # 낮은 점수로 인해 제거된 경우 minimum null prediction을 다시 추가합니다.
         if version_2_with_negative and not any(
-            p["offsets"] == (0, 0) for p in predictions
+                p["offsets"] == (0, 0) for p in predictions
         ):
             predictions.append(min_null_prediction)
 
@@ -222,13 +221,12 @@ def postprocess_qa_predictions(
         context = example["context"]
         for pred in predictions:
             offsets = pred.pop("offsets")
-            pred["text"] = context[offsets[0] : offsets[1]]
+            pred["text"] = context[offsets[0]: offsets[1]]
 
         # rare edge case에는 null이 아닌 예측이 하나도 없으며 failure를 피하기 위해 fake prediction을 만듭니다.
         if len(predictions) == 0 or (
-            len(predictions) == 1 and predictions[0]["text"] == ""
+                len(predictions) == 1 and predictions[0]["text"] == ""
         ):
-
             predictions.insert(
                 0, {"text": "empty", "start_logit": 0.0, "end_logit": 0.0, "score": 0.0}
             )
@@ -254,9 +252,9 @@ def postprocess_qa_predictions(
 
             # threshold를 사용해서 null prediction을 비교합니다.
             score_diff = (
-                null_score
-                - best_non_null_pred["start_logit"]
-                - best_non_null_pred["end_logit"]
+                    null_score
+                    - best_non_null_pred["start_logit"]
+                    - best_non_null_pred["end_logit"]
             )
             scores_diff_json[example["id"]] = float(score_diff)  # JSON-serializable 가능
             if score_diff > null_score_diff_threshold:
@@ -318,18 +316,17 @@ def postprocess_qa_predictions(
 
 
 def check_no_error(
-    data_args: DataTrainingArguments,
-    training_args: TrainingArguments,
-    datasets: DatasetDict,
-    tokenizer,
+        data_args: DataTrainingArguments,
+        training_args: TrainingArguments,
+        datasets: DatasetDict,
+        tokenizer,
 ) -> Tuple[Any, int]:
-
     # last checkpoint 찾기.
     last_checkpoint = None
     if (
-        os.path.isdir(training_args.output_dir)
-        and training_args.do_train
-        and not training_args.overwrite_output_dir
+            os.path.isdir(training_args.output_dir)
+            and training_args.do_train
+            and not training_args.overwrite_output_dir
     ):
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
@@ -371,6 +368,10 @@ def get_args():
         (ModelArguments, DataTrainingArguments, TrainingArguments)
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    if training_args.project_name is not None:
+        training_args.output_dir = os.path.join(training_args.output_dir, training_args.project_name)
+
     return model_args, data_args, training_args
 
 
