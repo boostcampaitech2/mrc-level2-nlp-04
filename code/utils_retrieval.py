@@ -8,14 +8,13 @@ from retrieval import SparseRetrieval
 
 
 def run_sparse_retrieval(
-    tokenize_fn: Callable[[str], List[str]],
-    datasets: DatasetDict,
-    training_args: TrainingArguments,
-    data_args: DataTrainingArguments,
-    data_path: str = "../data",
-    context_path: str = "wikipedia_documents.json",
+        tokenize_fn: Callable[[str], List[str]],
+        datasets: DatasetDict,
+        training_args: TrainingArguments,
+        data_args: DataTrainingArguments,
+        data_path: str = "../data",
+        context_path: str = "wikipedia_documents.json",
 ) -> DatasetDict:
-
     # Query에 맞는 Passage들을 Retrieval 합니다.
     retriever = SparseRetrieval(
         tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path

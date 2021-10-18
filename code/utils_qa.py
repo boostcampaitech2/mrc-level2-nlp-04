@@ -20,11 +20,9 @@ import collections
 import json
 import logging
 import os
-from copy import deepcopy
 from typing import Optional, Tuple, Any
 
 import numpy as np
-from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 import torch
@@ -521,5 +519,7 @@ def post_processing_function(examples, features, predictions, training_args):
 
 
 metric = load_metric("squad")
+
+
 def compute_metrics(p: EvalPrediction):
     return metric.compute(predictions=p.predictions, references=p.label_ids)

@@ -2,33 +2,19 @@ import logging
 import os
 import sys
 
-from typing import List, Callable, NoReturn, NewType, Any
-import dataclasses
+from typing import NoReturn
 
 import wandb
-from datasets import load_metric, load_from_disk, Dataset, DatasetDict
+from transformers import EarlyStoppingCallback
 
-from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
-
-from transformers import (
-    DataCollatorWithPadding,
-    EvalPrediction,
-    HfArgumentParser,
-    TrainingArguments,
-    set_seed,
-)
-
-from tokenizers import Tokenizer
-from tokenizers.models import WordPiece
-
-from utils_qa import postprocess_qa_predictions, check_no_error, get_args, set_seed_everything, get_models, get_data, \
+from utils_qa import check_no_error, get_args, set_seed_everything, get_models, get_data, \
     post_processing_function, compute_metrics
 from trainer_qa import QuestionAnsweringTrainer
-from retrieval import SparseRetrieval
 
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
+    TrainingArguments,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,6 +84,7 @@ def run_mrc(
         data_collator=data_collator,
         post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=training_args.early_stopping_patience)],  # early stopping
     )
 
     # Training

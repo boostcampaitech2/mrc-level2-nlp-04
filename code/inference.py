@@ -4,43 +4,19 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 대부분의 로직은 train.py 와 비슷하나 retrieval, predict 부분이 추가되어 있습니다.
 """
 
-
 import logging
 import sys
-from typing import Callable, List, Dict, NoReturn, Tuple
+from typing import NoReturn
 
-import numpy as np
-
-from datasets import (
-    load_metric,
-    load_from_disk,
-    Sequence,
-    Value,
-    Features,
-    Dataset,
-    DatasetDict,
-)
-
-from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
-
-from transformers import (
-    DataCollatorWithPadding,
-    EvalPrediction,
-    HfArgumentParser,
-    TrainingArguments,
-    set_seed,
-)
-
-from utils_qa import postprocess_qa_predictions, check_no_error, compute_metrics, post_processing_function, get_args, \
+from utils_qa import check_no_error, compute_metrics, post_processing_function, get_args, \
     set_seed_everything, get_models, get_data
 from trainer_qa import QuestionAnsweringTrainer
-from retrieval import SparseRetrieval
 
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
+    TrainingArguments,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -65,18 +41,17 @@ def main():
     # verbosity 설정 : Transformers logger의 정보로 사용합니다 (on main process only)
     logger.info("Training/evaluation parameters %s", training_args)
 
-
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, tokenizer, model)
 
 
 def run_mrc(
-    data_args: DataTrainingArguments,
-    training_args: TrainingArguments,
-    model_args: ModelArguments,
-    tokenizer,
-    model,
+        data_args: DataTrainingArguments,
+        training_args: TrainingArguments,
+        model_args: ModelArguments,
+        tokenizer,
+        model,
 ) -> NoReturn:
     # load data
     datasets, eval_dataset, data_collator = get_data(training_args, model_args, data_args, tokenizer)
