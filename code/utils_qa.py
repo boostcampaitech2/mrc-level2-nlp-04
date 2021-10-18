@@ -372,3 +372,17 @@ def get_args():
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     return model_args, data_args, training_args
+
+
+def set_seed_everything(seed):
+    '''Random Seed를 고정하는 함수'''
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
+    set_seed(seed)
+
+    return None

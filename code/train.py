@@ -19,7 +19,7 @@ from transformers import (
 from tokenizers import Tokenizer
 from tokenizers.models import WordPiece
 
-from utils_qa import postprocess_qa_predictions, check_no_error, get_args
+from utils_qa import postprocess_qa_predictions, check_no_error, get_args, set_seed_everything
 from trainer_qa import QuestionAnsweringTrainer
 from retrieval import SparseRetrieval
 
@@ -37,6 +37,9 @@ def main():
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
     model_args, data_args, training_args = get_args()
 
+    # 모델을 초기화하기 전에 난수를 고정합니다.
+    set_seed_everything(training_args.seed)
+
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
@@ -53,9 +56,6 @@ def main():
 
     # verbosity 설정 : Transformers logger의 정보로 사용합니다 (on main process only)
     logger.info("Training/evaluation parameters %s", training_args)
-
-    # 모델을 초기화하기 전에 난수를 고정합니다.
-    set_seed(training_args.seed)
 
     datasets = load_from_disk(data_args.dataset_name)
     print(datasets)
