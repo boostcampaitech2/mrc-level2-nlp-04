@@ -27,13 +27,14 @@ from tqdm.auto import tqdm
 
 import torch
 import random
-from transformers import is_torch_available, PreTrainedTokenizerFast, TrainingArguments
+from transformers import is_torch_available, PreTrainedTokenizerFast, HfArgumentParser
 from transformers.trainer_utils import get_last_checkpoint
 
 from datasets import DatasetDict
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
+    TrainingArguments,
 )
 
 
@@ -360,3 +361,14 @@ def check_no_error(
     if "validation" not in datasets:
         raise ValueError("--do_eval requires a validation dataset")
     return last_checkpoint, max_seq_length
+
+
+def get_args():
+    '''
+    훈련 시 입력한 각종 Argument를 반환하는 함수
+    '''
+    parser = HfArgumentParser(
+        (ModelArguments, DataTrainingArguments, TrainingArguments)
+    )
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    return model_args, data_args, training_args

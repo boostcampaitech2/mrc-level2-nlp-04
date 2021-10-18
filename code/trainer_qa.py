@@ -41,7 +41,7 @@ class QuestionAnsweringTrainer(Trainer):
 
         # 일시적으로 metric computation를 불가능하게 한 상태이며, 해당 코드에서는 loop 내에서 metric 계산을 수행합니다.
         compute_metrics = self.compute_metrics
-        self.compute_metrics = None
+        # self.compute_metrics = None
         try:
             output = self.prediction_loop(
                 eval_dataloader,

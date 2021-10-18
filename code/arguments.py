@@ -1,6 +1,20 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
+from transformers import TrainingArguments as OriginTrainingArguments
+
+
+@dataclass
+class TrainingArguments(OriginTrainingArguments):
+    output_dir: str = field(
+        default='./models',
+        metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
+    )
+    project_name: Optional[str] = field(
+        default=None,  # TODO PR 하실때는 None 으로 바꿔서 올려주세요! 얘의 목적은 wandb project name 설정을 위함입니다.
+        metadata={"help": "wandb project name"},
+    )
+
 
 @dataclass
 class ModelArguments:
