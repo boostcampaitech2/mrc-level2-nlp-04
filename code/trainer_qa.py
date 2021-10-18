@@ -34,14 +34,14 @@ class QuestionAnsweringTrainer(Trainer):
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
 
-    def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix='eval'):
+    def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None):
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
         eval_examples = self.eval_examples if eval_examples is None else eval_examples
 
         # 일시적으로 metric computation를 불가능하게 한 상태이며, 해당 코드에서는 loop 내에서 metric 계산을 수행합니다.
         compute_metrics = self.compute_metrics
-        # self.compute_metrics = None
+        self.compute_metrics = None
         try:
             output = self.prediction_loop(
                 eval_dataloader,
@@ -50,7 +50,6 @@ class QuestionAnsweringTrainer(Trainer):
                 # self.args.prediction_loss_only
                 prediction_loss_only=True if compute_metrics is None else None,
                 ignore_keys=ignore_keys,
-                metric_key_prefix=metric_key_prefix,
             )
         finally:
             self.compute_metrics = compute_metrics
@@ -66,6 +65,9 @@ class QuestionAnsweringTrainer(Trainer):
                 eval_examples, eval_dataset, output.predictions, self.args
             )
             metrics = self.compute_metrics(eval_preds)
+            # _save_checkpoint 에러 잡기 위한 하드코딩
+            metrics['eval_exact_match'] = metrics['exact_match']
+            metrics['eval_f1'] = metrics['f1']
 
             self.log(metrics)
         else:
