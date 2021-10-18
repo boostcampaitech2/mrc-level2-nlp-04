@@ -99,7 +99,7 @@ class DataProcessor():
             stride=self.data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            return_token_type_ids=False if 'roberta' in self.model_args.model_name_or_path else True,
+            return_token_type_ids=False if 'roberta' in self.model_args.tokenizer_name else True,
             padding="max_length"
         )
 

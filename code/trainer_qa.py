@@ -68,6 +68,7 @@ class QuestionAnsweringTrainer(Trainer):
             # _save_checkpoint 에러 잡기 위한 하드코딩
             metrics['eval_exact_match'] = metrics['exact_match']
             metrics['eval_f1'] = metrics['f1']
+            del metrics['exact_match'], metrics['f1']
 
             self.log(metrics)
         else:

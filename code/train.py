@@ -79,13 +79,13 @@ def run_mrc(
         tokenizer,
         model,
 ) -> NoReturn:
-    datasets, train_loader, eval_loader, train_dataset, eval_dataset, data_collator = \
-        get_data(training_args, model_args, data_args, tokenizer)
+    datasets, train_dataset, eval_dataset, data_collator = get_data(training_args, model_args, data_args, tokenizer)
 
     # 오류가 있는지 확인합니다.
     last_checkpoint, max_seq_length = check_no_error(
         data_args, training_args, datasets, tokenizer
     )
+    data_args.max_seq_length = max_seq_length
 
     # Trainer 초기화
     trainer = QuestionAnsweringTrainer(

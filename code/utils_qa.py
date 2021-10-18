@@ -376,8 +376,23 @@ def get_args():
 
     if training_args.project_name is not None:
         training_args.output_dir = os.path.join(training_args.output_dir, training_args.project_name)
+
+    # model_name_or_path 를 tokenizer_name 에 지정해줌
+    model_args.tokenizer_name = model_args.model_name_or_path
+
     # post_processing_function 에서 사용하기 위해 추가
     training_args.max_answer_length = data_args.max_answer_length
+
+    if training_args.do_predict:
+        # 학습시 모델을 저장했던 폴더를 model_args.model_name_or_path 에 지정해줌
+        model_args.model_name_or_path = training_args.output_dir
+
+        # inference 시에는 prediction 결과를 저장하는 곳이 output_dir 이 되므로 새로 지정해줌
+        assert training_args.project_name, "project_name 을 arguments.py 에서 지정해주세요!"
+        training_args.output_dir = os.path.join('./outputs', training_args.project_name)
+
+        data_args.dataset_name = '../data/test_dataset/'
+
     print(training_args)
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
@@ -448,7 +463,7 @@ def get_data(training_args, model_args, data_args, tokenizer):
         tokenizer, pad_to_multiple_of=(8 if training_args.fp16 else None)
     )
 
-    if not training_args.do_predict:
+    if training_args.do_train:
         train_dataset = datasets['train']
         eval_dataset = datasets['validation']
 
@@ -457,34 +472,25 @@ def get_data(training_args, model_args, data_args, tokenizer):
 
         train_dataset = data_processor.train_tokenizer(train_dataset, train_column_names)
         eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_column_names)
-        eval_dataset_for_model = eval_dataset.remove_columns(['example_id', 'offset_mapping'])
 
-        train_loader = DataLoader(train_dataset, collate_fn=data_collator,
-                                  batch_size=training_args.per_device_train_batch_size)
-
-        valid_loader = DataLoader(eval_dataset_for_model, collate_fn=data_collator,
-                                  batch_size=training_args.per_device_eval_batch_size)
-
-        return datasets, train_loader, valid_loader, train_dataset, eval_dataset, data_collator
+        return datasets, train_dataset, eval_dataset, data_collator
     else:
         # test data 에는 context 가 없으므로 retrieval 해서 추가해줌
-        datasets = run_sparse_retrieval(
-            tokenizer.tokenize,
-            datasets,
-            training_args,
-            data_args,
-        )
+        if data_args.eval_retrieval:
+            datasets = run_sparse_retrieval(
+                tokenizer.tokenize,
+                datasets,
+                training_args,
+                data_args,
+            )
         # test data 폴더에 들어있는 데이터에서도 validation 으로 되어있음
-        test_dataset = datasets['validation']
+        eval_dataset = datasets['validation']
 
-        test_column_names = test_dataset.column_names
+        eval_column_names = eval_dataset.column_names
 
-        test_dataset = data_processor.valid_tokenizer(test_dataset, test_column_names)
-        test_dataset_for_model = test_dataset.remove_columns(['example_id', 'offset_mapping'])
+        eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_column_names)
 
-        test_loader = DataLoader(test_dataset_for_model, collate_fn=data_collator, batch_size=1)
-
-        return datasets, test_loader, test_dataset
+        return datasets, eval_dataset, data_collator
 
 
 # Post-processing:
