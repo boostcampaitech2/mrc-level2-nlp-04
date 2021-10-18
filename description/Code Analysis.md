@@ -80,7 +80,7 @@ model_name_or_path: str = field(
 > arguments.py DataTrainingArguments 37~92
 
 ```py
-	dataset_name: Optional[str] = field(
+    dataset_name: Optional[str] = field(
         default="../data/train_dataset",
         metadata={"help": "The name of the dataset to use."},
     )
@@ -138,7 +138,11 @@ model_name_or_path: str = field(
     )
 ```
 * load한 tokenizer에 대한 세부 인자를 설정할 수 있다.
-
+  * overwrite_cache : 캐싱을 이용해 더 빨리 데이터를 배치만큼 가져오도록 할 지
+  * eval_retrieval : retrieval 할 때 sparse embedding 방식을 사용할 것인지
+  * num_clusters : 비슷한 passage끼리 모아놓은 군집을 몇개로 설정할 지
+  * tok_k_retrieval : 상위 몇개의 passage를 retrieve 할지
+  * use_faiss : passage retrival을 faiss를 사용해서 할지
 ---
 
 > train.py main 53~63
@@ -557,8 +561,25 @@ validation dataset에 대해서도 `do_eval==True`의 경우를 위해 정의해
     )
 ```
 * trainer는 기존 huggingface에서 제공하는 Trainer를 사용하되, 이를 상속받아 좀 더 개선해서 QA Task에 specific한 trainer를 사용한다.
+* 여기서 사용하는 `data_collator`와 `compute_metrices`는 위에서 언급한 함수이며, `post_processing_function`은 아래에서 다시 다룬다.
 
 ---
+
+> train_qa.py QuestionAnsweringTrainer 30~35
+
+```py
+# Huggingface의 Trainer를 상속받아 QuestionAnswering을 위한 Trainer를 생성합니다.
+class QuestionAnsweringTrainer(Trainer):
+    def __init__(self, *args, eval_examples=None, post_process_function=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.eval_examples = eval_examples
+        self.post_process_function = post_process_function
+```
+* 우리가 사용하는 Trainer이며, 실제 허킹페이스 깃허브에도 업로드 되어있다. train시 사용될 인자 `args`와 `kwargs`를 입력받아 `super().__init__()`에서 사용하며, 몇몇 함수에서 사용할 인자와 후처리 함수를 입력으로 받는다.
+* 여기에는 validation dataset에서 사용하는 `evaluate` 함수와 test dataset에서 사용하는 `predict` 함수가 있으며, 이는 나중에 호출될 때 다시 다룬다.
+
+---
+
 
 > train.py run_mrc 326~355
 
@@ -594,6 +615,9 @@ validation dataset에 대해서도 `do_eval==True`의 경우를 위해 정의해
             os.path.join(training_args.output_dir, "trainer_state.json")
         )
 ```
+* chkecpoint가 있으면 불러오며, 학습을 진행한다. 학습이 끝나면 모델을 저장한다.
+* metric에 전체 데이터셋 길이를 알려주고 계산된 metric이 logging되고 save될 수 있도록 한다. trainer의 파라미터도 저장한다.
+* 그 외에도 결과 파일들을 저장한다.
 
 ---
 
@@ -610,6 +634,7 @@ validation dataset에 대해서도 `do_eval==True`의 경우를 위해 정의해
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 ```
+* 평가 모드라면 학습을 하지 않고 단순히 `evaluate`로 평가만 진행하며 이에 대한 metrics을 저장한다.
 
 ---
 
@@ -646,6 +671,9 @@ validation dataset에 대해서도 `do_eval==True`의 경우를 위해 정의해
                 predictions=formatted_predictions, label_ids=references
             )
 ```
+* 트레이너에 입력되는 후처리 함수이다. 이에 대한 자세한 인자 설명은 `postporcess_qa_predictions`의 주석으로 달려있다. 이 함수를 통해 얻은 predictions를 id와 text의 key를 가진 딕셔너리 형태로 만든다.
+* 학습으로 실행된 것이면 id와 text로 이루어진 포맷을 반환하고, 검증으로 실행된 것이면 validation dataset의 라벨과 포맷을 함께 EvalPrediction Class로 넘겨준다. 이는 나중에 `p.predictions`, `p.label_ids` 와 같은 꼴로 사용할 수 있다. 이는 test는 정답을 모르기에 예측만을 가지고 사용하고 valid는 정답과 비교해 metrics를 출력하기 위함이다.
+* 중요한 것은 이 함수는 train이 아닌, valid와 test dataset만이 적용된다는 것이다. 이러한 이유는, train은 후처리를 통해 평가 지표를 비교하지 않고, start pos와 end pos에 대한 loss로 update되기 때문이다. 실제로 train.py에서는 training_args.do_predict를 사용할 일이 없으며 이에 대해서는 inference와 동일한 코드 사용을 위해 추가되어 있는 것으로 보인다. (그래서, train.py보다는 utils_qa쪽에 있는 것이 더 자연스럽고 재사용성이 좋다. 현재는 inference.py에도 동일한 코드가 추가되어있기 때문)
 
 ---
 
@@ -732,6 +760,11 @@ def postprocess_qa_predictions(
         f"Post-processing {len(examples)} example predictions split into {len(features)} features."
     )
 ```
+* prediction은 (start_pos, end_pos)라는 튜플형으로 존재해야 하며 이에 대한 잘못된 포맷사용을 막아준다. 
+* 또, 전체 예측의 개수와 실제 데이터의 개수가 동일해야 한다.
+* `example_id_to_index`는 단순히 각각의 example을 0부터 indexing하기 위한 변수이다. `example_id`는 mrc-1-000067와 같은 값을 가지며 이들에 대한 순서를 메기기 위해 사용한다.
+* `features_per_example`은 example과 feature를 mapping하기 위한 함수이다. example과 feature는 개수가 다르고 순서가 다를 수 있기 때문에 이를 이어준다. 왜냐하면 feature는 example에서 max_seq_length로 split(=truncate)되었기 때문.
+* 순서를 고려하는 OrderedDict를 생성합니다. all_predictions는
 
 ---
 
@@ -778,6 +811,8 @@ def postprocess_qa_predictions(
 
             end_indexes = np.argsort(end_logits)[-1 : -n_best_size - 1 : -1].tolist()
 ```
+* 전체 example에 대한 loop를 돌며 features에 접근한다.
+* 각 feature에 대한 loop를 돌며 feature(=truncated context)의 (answer이라고 생각되는)start와 end의 점수를 계속 쌓는다. 계속 점수들이 쌓일텐데, 이 중에 n_best_size만큼만을 선택해서 `tolsit()` 한 최종 결과로 `start_indexes`와 `end_indexes`를 가지게된다. 
 
 ---
 
@@ -818,6 +853,7 @@ def postprocess_qa_predictions(
                         }
                     )
 ```
+* 
 
 ---
 
