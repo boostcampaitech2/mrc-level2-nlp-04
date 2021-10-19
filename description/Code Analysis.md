@@ -3,18 +3,19 @@
 
 ```
 ┌ Train
-│　　├─── 메인 함수 실행
-│　　├─── Argument 및 model loading
+│　　├─── Main
+│　　├─── Argument & Model loading
 │　　├─── MRC
 │　　├─── Preprocessing
 │　　├─── Data Collator
 │　　├─── Metric
-│　　├─── Train (작성 중)
-│　　├─── Postprocessing (작성 중)
-├ Retrieval
-│　　├─── (작성 예정)
+│　　├─── Train
+│　　├─── Postprocessing
+│
 └ Inference
-　 　├─── (작성 예정)
+　 　├─── Equal to Train
+　 　├─── Call Retriever
+　 　├─── Retriever
 ```
 
 ---
@@ -23,7 +24,7 @@
 
 ## Train
 
-### 메인 함수 실행
+### Main
 > train.py 368~369
 
 ```py
@@ -33,7 +34,7 @@ if __name__ == "__main__":
 
 ---
 
-### Argument 및 model loading
+### Argument & Model loading
 > train.py main 39~42
 
 ```py
@@ -1021,66 +1022,530 @@ def postprocess_qa_predictions(
   * prediction에 대한 dict와 n_best에 대한 dict를 json파일로 저장할 path를 지정한다.
   * `json.dump()`는 json 포맷으로 데이터를 저장하겠다는 뜻이며 `json.dumps()`는 저장한 이후에도 이를 사용하기 위해 반환받겠다는 뜻. 저장 후 반환해서 txt파일로 한번 더 저장하게 된다.
 * 이후 best-1 예측을 반환한다.
----
-
-<br>
-
-## Retrieval
-
-<br>
-
-###
-> 
-
-```py retrieval retrieval
-if __name__ == "__main__":
-
-    import argparse
-
-    parser = argparse.ArgumentParser(description="")
-    parser.add_argument(
-        "--dataset_name", metavar="./data/train_dataset", type=str, help=""
-    )
-    parser.add_argument(
-        "--model_name_or_path",
-        metavar="bert-base-multilingual-cased",
-        type=str,
-        help="",
-    )
-    parser.add_argument("--data_path", metavar="./data", type=str, help="")
-    parser.add_argument(
-        "--context_path", metavar="wikipedia_documents", type=str, help=""
-    )
-    parser.add_argument("--use_faiss", metavar=False, type=bool, help="")
-
-    args = parser.parse_args()
-
-    # Test sparse
-    org_dataset = load_from_disk(args.dataset_name)
-    full_ds = concatenate_datasets(
-        [
-            org_dataset["train"].flatten_indices(),
-            org_dataset["validation"].flatten_indices(),
-        ]
-    )  # train dev 를 합친 4192 개 질문에 대해 모두 테스트
-    print("*" * 40, "query dataset", "*" * 40)
-    print(full_ds)
-```
 
 ---
 
 <br>
 
 ## Inference
+### Equal to Train
+대부분의 과정은 train.py와 동일하므로 설명을 생략한다. 다른 점은 `trainer.predict`가 실행되는 부분이며 이에 대한 retrieval에 전반적인 설명을 다룬다.
+
+---
 
 <br>
 
-###
-> 
+### Call Retriever
+> inferece.py main 96~103
 
 ```py
-
+    # True일 경우 : run passage retrieval
+    if data_args.eval_retrieval:
+        datasets = run_sparse_retrieval(
+            tokenizer.tokenize,
+            datasets,
+            training_args,
+            data_args,
+        )
 ```
+* `eval_retrieval` 이 True일 경우 데이터셋을 구성할 때 `run_sparse_retrieval`을 통해 구성하게 된다.
+
+---
+
+> inferece.py run_sparse_retrieval 110~161
+
+```py
+def run_sparse_retrieval(
+    tokenize_fn: Callable[[str], List[str]],
+    datasets: DatasetDict,
+    training_args: TrainingArguments,
+    data_args: DataTrainingArguments,
+    data_path: str = "../data",
+    context_path: str = "wikipedia_documents.json",
+) -> DatasetDict:
+
+    # Query에 맞는 Passage들을 Retrieval 합니다.
+    retriever = SparseRetrieval(
+        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
+    )
+    retriever.get_sparse_embedding()
+
+    if data_args.use_faiss:
+        retriever.build_faiss(num_clusters=data_args.num_clusters)
+        df = retriever.retrieve_faiss(
+            datasets["validation"], topk=data_args.top_k_retrieval
+        )
+    else:
+        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+
+    # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
+    if training_args.do_predict:
+        f = Features(
+            {
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+
+    # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
+    elif training_args.do_eval:
+        f = Features(
+            {
+                "answers": Sequence(
+                    feature={
+                        "text": Value(dtype="string", id=None),
+                        "answer_start": Value(dtype="int32", id=None),
+                    },
+                    length=-1,
+                    id=None,
+                ),
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+    datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+    return datasets
+```
+* `run_sparse_retrieval`은 tokenzier와 datasets, training_args와 data_args을 입력받는다. data_path는 dataset의 경로이며 default로 설정되어 있다. context_path는 wikipedia로 open domain이 참고할 수 있는 reference이며 마찬가지로 "wikipedia_documents.json"이 default로 설정되어있다.
+* `SparseRetrieval`을 통해 retriever가 구성된다. 이후, `get_sparse_embedding`을 통해 희소행렬이 구성된다.
+* `use_faiss`가 True라면 `build_faiss`와 `retrieve_faiss`가, False라면 `retrieve`가 실행된다.
+* 위 함수들에 대한 자세한 설명은 아래에서 바로 다룬다.
 
 
-<br>
+### Retriever
+
+> infernece.py SparseRetrieval 30~77
+
+```py
+class SparseRetrieval:
+    def __init__(
+        self,
+        tokenize_fn,
+        data_path: Optional[str] = "../data/",
+        context_path: Optional[str] = "wikipedia_documents.json",
+    ) -> NoReturn:
+
+        """
+        Arguments:
+            tokenize_fn:
+                기본 text를 tokenize해주는 함수입니다.
+                아래와 같은 함수들을 사용할 수 있습니다.
+                - lambda x: x.split(' ')
+                - Huggingface Tokenizer
+                - konlpy.tag의 Mecab
+
+            data_path:
+                데이터가 보관되어 있는 경로입니다.
+
+            context_path:
+                Passage들이 묶여있는 파일명입니다.
+
+            data_path/context_path가 존재해야합니다.
+
+        Summary:
+            Passage 파일을 불러오고 TfidfVectorizer를 선언하는 기능을 합니다.
+        """
+
+        self.data_path = data_path
+        with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
+            wiki = json.load(f)
+
+        self.contexts = list(
+            dict.fromkeys([v["text"] for v in wiki.values()])
+        )  # set 은 매번 순서가 바뀌므로
+        print(f"Lengths of unique contexts : {len(self.contexts)}")
+        self.ids = list(range(len(self.contexts)))
+
+        # Transform by vectorizer
+        self.tfidfv = TfidfVectorizer(
+            tokenizer=tokenize_fn,
+            ngram_range=(1, 2),
+            max_features=50000,
+        )
+
+        self.p_embedding = None  # get_sparse_embedding()로 생성합니다
+        self.indexer = None  # build_faiss()로 생성합니다.
+```
+* sparse 방식의 retrieval을 정의한다. 여기서는 class로 정의했으며 이 retrieval에 대한 모든 함수가 클래스의 메서드로 존재한다.
+* init시, tokenizer와 data_path, context_path를 받는다.
+* data_path와 context_path를 가지고 연결된 위키파일을 연다.
+* ids는 전체 인덱스를 가지고 있으며 tfidfv는 TF-IDF값을 가지게 된다. 여기서는 unigram과 bigram을 사용하며 최대 vocab은 5만개이다.
+* `get_sparse_embedding`을 가지고 `p_embedding`을 얻으며 `build_faiss`로 각 클러스터의 센터로이드 인덱스 `indexer`를 얻는다.
+
+---
+
+> inference.py get_sparse_embedding 79~108
+
+```py
+    def get_sparse_embedding(self) -> NoReturn:
+
+        """
+        Summary:
+            Passage Embedding을 만들고
+            TFIDF와 Embedding을 pickle로 저장합니다.
+            만약 미리 저장된 파일이 있으면 저장된 pickle을 불러옵니다.
+        """
+
+        # Pickle을 저장합니다.
+        pickle_name = f"sparse_embedding.bin"
+        tfidfv_name = f"tfidv.bin"
+        emd_path = os.path.join(self.data_path, pickle_name)
+        tfidfv_path = os.path.join(self.data_path, tfidfv_name)
+
+        if os.path.isfile(emd_path) and os.path.isfile(tfidfv_path):
+            with open(emd_path, "rb") as file:
+                self.p_embedding = pickle.load(file)
+            with open(tfidfv_path, "rb") as file:
+                self.tfidfv = pickle.load(file)
+            print("Embedding pickle load.")
+        else:
+            print("Build passage embedding")
+            self.p_embedding = self.tfidfv.fit_transform(self.contexts)
+            print(self.p_embedding.shape)
+            with open(emd_path, "wb") as file:
+                pickle.dump(self.p_embedding, file)
+            with open(tfidfv_path, "wb") as file:
+                pickle.dump(self.tfidfv, file)
+            print("Embedding pickle saved.")
+```
+* sparse embedding과 TF-IDF 데이터를 binary형식으로 저장하기 위해 name과 path를 정의한다.
+* 기존에 저장된 임베딩과 tfidfv가 있으면 불러온다. 없으면 `tfidfv.fit_transform`을 통해 전체 위키를 학습한다. (여기서 학습은 신경망을 사용하는 것이 아니라 전체 위키에 대한 TF-IDF 값을 구한다는 것) 이후, 학습이 완료되면 이를 저장한다.
+---
+
+> inferece.py build_faiss 110~145
+
+```py
+    def build_faiss(self, num_clusters=64) -> NoReturn:
+
+        """
+        Summary:
+            속성으로 저장되어 있는 Passage Embedding을
+            Faiss indexer에 fitting 시켜놓습니다.
+            이렇게 저장된 indexer는 `get_relevant_doc`에서 유사도를 계산하는데 사용됩니다.
+
+        Note:
+            Faiss는 Build하는데 시간이 오래 걸리기 때문에,
+            매번 새롭게 build하는 것은 비효율적입니다.
+            그렇기 때문에 build된 index 파일을 저정하고 다음에 사용할 때 불러옵니다.
+            다만 이 index 파일은 용량이 1.4Gb+ 이기 때문에 여러 num_clusters로 시험해보고
+            제일 적절한 것을 제외하고 모두 삭제하는 것을 권장합니다.
+        """
+
+        indexer_name = f"faiss_clusters{num_clusters}.index"
+        indexer_path = os.path.join(self.data_path, indexer_name)
+        if os.path.isfile(indexer_path):
+            print("Load Saved Faiss Indexer.")
+            self.indexer = faiss.read_index(indexer_path)
+
+        else:
+            p_emb = self.p_embedding.astype(np.float32).toarray()
+            emb_dim = p_emb.shape[-1]
+
+            num_clusters = num_clusters
+            quantizer = faiss.IndexFlatL2(emb_dim)
+
+            self.indexer = faiss.IndexIVFScalarQuantizer(
+                quantizer, quantizer.d, num_clusters, faiss.METRIC_L2
+            )
+            self.indexer.train(p_emb)
+            self.indexer.add(p_emb)
+            faiss.write_index(self.indexer, indexer_path)
+            print("Faiss Indexer Saved.")
+```
+* build_faiss의 용도는 수많은 유사도 비교를 위해 passage들을 모두 접근할 수 없으므로 clustering 방법을 적용하기 위함이다.
+* cluster의 수는 64가 default이다.
+* 만일 이전 faiss file이 저장되어 있다면 loading하고 없다면 새로 학습해서 저장한다.
+* 이 때 embedding값은 32비트 float을 사용하며, `faiss.IndexIVFScalarQuantizer`함수로 64개의 centeroid index값을 얻게된다. 이 때 `quantizer`는 L2거리를 이용해 거리를 계산하기 위한 양자화 변수이다.
+* 이 `indexer`는 embedding값을 가지고 계속 학습하면서 centeroid를 기준으로 한 64개의 cluster를 구성하게되며, 학습이 끝난 후에는 indexer에 모든 임베딩을 추가해서 군집화될 수 있도록 한다.
+---
+
+> inference.py retrieve 147~211
+
+```py
+    def retrieve(
+        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
+    ) -> Union[Tuple[List, List], pd.DataFrame]:
+
+        """
+        Arguments:
+            query_or_dataset (Union[str, Dataset]):
+                str이나 Dataset으로 이루어진 Query를 받습니다.
+                str 형태인 하나의 query만 받으면 `get_relevant_doc`을 통해 유사도를 구합니다.
+                Dataset 형태는 query를 포함한 HF.Dataset을 받습니다.
+                이 경우 `get_relevant_doc_bulk`를 통해 유사도를 구합니다.
+            topk (Optional[int], optional): Defaults to 1.
+                상위 몇 개의 passage를 사용할 것인지 지정합니다.
+
+        Returns:
+            1개의 Query를 받는 경우  -> Tuple(List, List)
+            다수의 Query를 받는 경우 -> pd.DataFrame: [description]
+
+        Note:
+            다수의 Query를 받는 경우,
+                Ground Truth가 있는 Query (train/valid) -> 기존 Ground Truth Passage를 같이 반환합니다.
+                Ground Truth가 없는 Query (test) -> Retrieval한 Passage만 반환합니다.
+        """
+
+        assert self.p_embedding is not None, "get_sparse_embedding() 메소드를 먼저 수행해줘야합니다."
+
+        if isinstance(query_or_dataset, str):
+            doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
+            print("[Search query]\n", query_or_dataset, "\n")
+
+            for i in range(topk):
+                print(f"Top-{i+1} passage with score {doc_scores[i]:4f}")
+                print(self.contexts[doc_indices[i]])
+
+            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
+
+        elif isinstance(query_or_dataset, Dataset):
+
+            # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
+            total = []
+            with timer("query exhaustive search"):
+                doc_scores, doc_indices = self.get_relevant_doc_bulk(
+                    query_or_dataset["question"], k=topk
+                )
+            for idx, example in enumerate(
+                tqdm(query_or_dataset, desc="Sparse retrieval: ")
+            ):
+                tmp = {
+                    # Query와 해당 id를 반환합니다.
+                    "question": example["question"],
+                    "id": example["id"],
+                    # Retrieve한 Passage의 id, context를 반환합니다.
+                    "context_id": doc_indices[idx],
+                    "context": " ".join(
+                        [self.contexts[pid] for pid in doc_indices[idx]]
+                    ),
+                }
+                if "context" in example.keys() and "answers" in example.keys():
+                    # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                    tmp["original_context"] = example["context"]
+                    tmp["answers"] = example["answers"]
+                total.append(tmp)
+
+            cqas = pd.DataFrame(total)
+            return cqas
+```
+* `use_faiss`가 True라면 `retrieve_faiss`를 호출하며, False이면 `retrieve`를 호출한다. 여기서는 False인 경우이다.
+* 이 때 질문을 string형태 또는 dataset형태로 받게 되는데, 하나의 query는 `get_relevant_doc`을 호출해서 유사도를 계산하고 dataset 형태의 여러개의 query는 `get_relevant_doc_bulk`를 호출해 유사도를 계산하고 `HF.Dataset`을 반환받는다.
+* 또한, Ground Truth가 존재하면 Ground Truth Passage를 같이 반환하며, 존재하지 않으면 Retrieve한 Passage만 반환한다.
+* 각 함수 호출마다 우리가 직접 정의한 timer함수가 호출되며 이는 retrieve하는데 걸린 시간을 print 해준다.
+
+---
+
+> inference.py get_relevant_doc 213~239
+
+```py
+    def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
+
+        """
+        Arguments:
+            query (str):
+                하나의 Query를 받습니다.
+            k (Optional[int]): 1
+                상위 몇 개의 Passage를 반환할지 정합니다.
+        Note:
+            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
+        """
+
+        with timer("transform"):
+            query_vec = self.tfidfv.transform([query])
+        assert (
+            np.sum(query_vec) != 0
+        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+
+        with timer("query ex search"):
+            result = query_vec * self.p_embedding.T
+        if not isinstance(result, np.ndarray):
+            result = result.toarray()
+
+        sorted_result = np.argsort(result.squeeze())[::-1]
+        doc_score = result.squeeze()[sorted_result].tolist()[:k]
+        doc_indices = sorted_result.tolist()[:k]
+        return doc_score, doc_indices
+```
+* 하나의 query에 대한 retrieve 함수이다. str과 k를 인자로 받으며 이 k는 상위 몇 개의 passage를 반환할 지에 대한 인자이다. default는 1이다.
+* `tfidfv.transform`으로 query에 대한 tfidf 값을 구한다. 만약 query에 어떤 토큰도 기존 tfidf(wiki의 tfidf)의 vocab에 존재하지 않으면 에러를 발생시킨다.
+* wiki의 tfidf와 query의 tfidf를 구해 각 passage마다 유사도를 구며 이 중 k개의 score와 index를 반환한다.
+
+---
+
+> inference.py get_relevant_doc_bulk 241~269
+
+```py
+    def get_relevant_doc_bulk(
+        self, queries: List, k: Optional[int] = 1
+    ) -> Tuple[List, List]:
+
+        """
+        Arguments:
+            queries (List):
+                하나의 Query를 받습니다.
+            k (Optional[int]): 1
+                상위 몇 개의 Passage를 반환할지 정합니다.
+        Note:
+            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
+        """
+
+        query_vec = self.tfidfv.transform(queries)
+        assert (
+            np.sum(query_vec) != 0
+        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+
+        result = query_vec * self.p_embedding.T
+        if not isinstance(result, np.ndarray):
+            result = result.toarray()
+        doc_scores = []
+        doc_indices = []
+        for i in range(result.shape[0]):
+            sorted_result = np.argsort(result[i, :])[::-1]
+            doc_scores.append(result[i, :][sorted_result].tolist()[:k])
+            doc_indices.append(sorted_result.tolist()[:k])
+        return doc_scores, doc_indices
+```
+* bulk 모드도 크게 다르지 않으나 유사도가 2차원의 shape을 가지기 때문에 이 부분을 고려해서 score와 index를 반환한다.
+---
+
+> inference.py retrieve_faiss 271~339
+
+```py
+    def retrieve_faiss(
+        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
+    ) -> Union[Tuple[List, List], pd.DataFrame]:
+
+        """
+        Arguments:
+            query_or_dataset (Union[str, Dataset]):
+                str이나 Dataset으로 이루어진 Query를 받습니다.
+                str 형태인 하나의 query만 받으면 `get_relevant_doc`을 통해 유사도를 구합니다.
+                Dataset 형태는 query를 포함한 HF.Dataset을 받습니다.
+                이 경우 `get_relevant_doc_bulk`를 통해 유사도를 구합니다.
+            topk (Optional[int], optional): Defaults to 1.
+                상위 몇 개의 passage를 사용할 것인지 지정합니다.
+
+        Returns:
+            1개의 Query를 받는 경우  -> Tuple(List, List)
+            다수의 Query를 받는 경우 -> pd.DataFrame: [description]
+
+        Note:
+            다수의 Query를 받는 경우,
+                Ground Truth가 있는 Query (train/valid) -> 기존 Ground Truth Passage를 같이 반환합니다.
+                Ground Truth가 없는 Query (test) -> Retrieval한 Passage만 반환합니다.
+            retrieve와 같은 기능을 하지만 faiss.indexer를 사용합니다.
+        """
+
+        assert self.indexer is not None, "build_faiss()를 먼저 수행해주세요."
+
+        if isinstance(query_or_dataset, str):
+            doc_scores, doc_indices = self.get_relevant_doc_faiss(
+                query_or_dataset, k=topk
+            )
+            print("[Search query]\n", query_or_dataset, "\n")
+
+            for i in range(topk):
+                print("Top-%d passage with score %.4f" % (i + 1, doc_scores[i]))
+                print(self.contexts[doc_indices[i]])
+
+            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
+
+        elif isinstance(query_or_dataset, Dataset):
+
+            # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
+            queries = query_or_dataset["question"]
+            total = []
+
+            with timer("query faiss search"):
+                doc_scores, doc_indices = self.get_relevant_doc_bulk_faiss(
+                    queries, k=topk
+                )
+            for idx, example in enumerate(
+                tqdm(query_or_dataset, desc="Sparse retrieval: ")
+            ):
+                tmp = {
+                    # Query와 해당 id를 반환합니다.
+                    "question": example["question"],
+                    "id": example["id"],
+                    # Retrieve한 Passage의 id, context를 반환합니다.
+                    "context_id": doc_indices[idx],
+                    "context": " ".join(
+                        [self.contexts[pid] for pid in doc_indices[idx]]
+                    ),
+                }
+                if "context" in example.keys() and "answers" in example.keys():
+                    # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                    tmp["original_context"] = example["context"]
+                    tmp["answers"] = example["answers"]
+                total.append(tmp)
+
+            return pd.DataFrame(total)
+```
+* `retrieve` 함수와 구성은 비슷하며 차이점은 `get_relevant_doc` 함수 대신 `get_relevant_doc_faiss`를 호출한다는 점이다. 이는 단순히 tfidf값을 곱하는 것이 아니라 cluster의 centroid의 tfidf와 곱한 뒤 해당 그룹에 해당하는 passage들과만 유사도를 구한다는 것이다.
+
+---
+
+> inference.py get_relevant_doc_faiss 341~364
+
+```py
+    def get_relevant_doc_faiss(
+        self, query: str, k: Optional[int] = 1
+    ) -> Tuple[List, List]:
+
+        """
+        Arguments:
+            query (str):
+                하나의 Query를 받습니다.
+            k (Optional[int]): 1
+                상위 몇 개의 Passage를 반환할지 정합니다.
+        Note:
+            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
+        """
+
+        query_vec = self.tfidfv.transform([query])
+        assert (
+            np.sum(query_vec) != 0
+        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+
+        q_emb = query_vec.toarray().astype(np.float32)
+        with timer("query faiss search"):
+            D, I = self.indexer.search(q_emb, k)
+
+        return D.tolist()[0], I.tolist()[0]
+```
+* faiss를 사용하되 단일 query를 받았을 때 사용하는 함수이다. `indexer.search(q_emb, k)`를 통해 Distance와 Indices를 k개만큼 얻고 이를 반환한다.
+* 만약 k가 3이라면 아래와 같이 Distance와 Indices가 반환되며 shape가 2차원이기 때문에 [0]으로 인덱싱해서 반환한다. (이는 2차원 리스트를 1차원 리스트로 reshape해서 반환하는 것과 동일)
+![](https://images.velog.io/images/sangmandu/post/10196612-85a8-463f-84d6-70a03871be2b/image.png)
+
+---
+
+> inference.py get_relevant_doc_bulk_faiss 366~388
+
+```py
+    def get_relevant_doc_bulk_faiss(
+        self, queries: List, k: Optional[int] = 1
+    ) -> Tuple[List, List]:
+
+        """
+        Arguments:
+            queries (List):
+                하나의 Query를 받습니다.
+            k (Optional[int]): 1
+                상위 몇 개의 Passage를 반환할지 정합니다.
+        Note:
+            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
+        """
+
+        query_vecs = self.tfidfv.transform(queries)
+        assert (
+            np.sum(query_vecs) != 0
+        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+
+        q_embs = query_vecs.toarray().astype(np.float32)
+        D, I = self.indexer.search(q_embs, k)
+
+        return D.tolist(), I.tolist()
+```
+* `get_relevant_doc_faiss`와 동일하다.
