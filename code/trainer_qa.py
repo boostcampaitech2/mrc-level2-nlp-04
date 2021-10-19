@@ -17,8 +17,6 @@ Question-Answering task와 관련된 'Trainer'의 subclass 코드 입니다.
 """
 
 from transformers import Trainer, is_datasets_available, is_torch_tpu_available
-from transformers.trainer_utils import PredictionOutput
-
 
 if is_datasets_available():
     import datasets
@@ -26,6 +24,7 @@ if is_datasets_available():
 if is_torch_tpu_available():
     import torch_xla.core.xla_model as xm
     import torch_xla.debug.metrics as met
+
 
 # Huggingface의 Trainer를 상속받아 QuestionAnswering을 위한 Trainer를 생성합니다.
 class QuestionAnsweringTrainer(Trainer):
@@ -65,6 +64,10 @@ class QuestionAnsweringTrainer(Trainer):
                 eval_examples, eval_dataset, output.predictions, self.args
             )
             metrics = self.compute_metrics(eval_preds)
+            # _save_checkpoint 에러 잡기 위한 하드코딩
+            metrics['eval_exact_match'] = metrics['exact_match']
+            metrics['eval_f1'] = metrics['f1']
+            del metrics['exact_match'], metrics['f1']
 
             self.log(metrics)
         else:

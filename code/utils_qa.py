@@ -27,15 +27,18 @@ from tqdm.auto import tqdm
 
 import torch
 import random
-from transformers import is_torch_available, PreTrainedTokenizerFast, TrainingArguments
-from transformers.trainer_utils import get_last_checkpoint
+from transformers import is_torch_available, PreTrainedTokenizerFast, HfArgumentParser, AutoConfig, AutoTokenizer, \
+    AutoModelForQuestionAnswering, DataCollatorWithPadding
+from transformers.trainer_utils import get_last_checkpoint, EvalPrediction
 
-from datasets import DatasetDict
+from datasets import DatasetDict, load_from_disk, load_metric
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
+    TrainingArguments,
 )
-
+from utils_retrieval import run_sparse_retrieval
+from data_processing import DataProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -58,16 +61,16 @@ def set_seed(seed: int = 42):
 
 
 def postprocess_qa_predictions(
-    examples,
-    features,
-    predictions: Tuple[np.ndarray, np.ndarray],
-    version_2_with_negative: bool = False,
-    n_best_size: int = 20,
-    max_answer_length: int = 30,
-    null_score_diff_threshold: float = 0.0,
-    output_dir: Optional[str] = None,
-    prefix: Optional[str] = None,
-    is_world_process_zero: bool = True,
+        examples,
+        features,
+        predictions: Tuple[np.ndarray, np.ndarray],
+        version_2_with_negative: bool = False,
+        n_best_size: int = 20,
+        max_answer_length: int = 30,
+        null_score_diff_threshold: float = 0.0,
+        output_dir: Optional[str] = None,
+        prefix: Optional[str] = None,
+        is_world_process_zero: bool = True,
 ):
     """
     Post-processes : qa model의 prediction 값을 후처리하는 함수
@@ -101,7 +104,7 @@ def postprocess_qa_predictions(
             이 프로세스가 main process인지 여부(logging/save를 수행해야 하는지 여부를 결정하는 데 사용됨)
     """
     assert (
-        len(predictions) == 2
+            len(predictions) == 2
     ), "`predictions` should be a tuple with two elements (start_logits, end_logits)."
     all_start_logits, all_end_logits = predictions
 
@@ -150,8 +153,8 @@ def postprocess_qa_predictions(
             # minimum null prediction을 업데이트 합니다.
             feature_null_score = start_logits[0] + end_logits[0]
             if (
-                min_null_prediction is None
-                or min_null_prediction["score"] > feature_null_score
+                    min_null_prediction is None
+                    or min_null_prediction["score"] > feature_null_score
             ):
                 min_null_prediction = {
                     "offsets": (0, 0),
@@ -162,31 +165,31 @@ def postprocess_qa_predictions(
 
             # `n_best_size`보다 큰 start and end logits을 살펴봅니다.
             start_indexes = np.argsort(start_logits)[
-                -1 : -n_best_size - 1 : -1
-            ].tolist()
+                            -1: -n_best_size - 1: -1
+                            ].tolist()
 
-            end_indexes = np.argsort(end_logits)[-1 : -n_best_size - 1 : -1].tolist()
+            end_indexes = np.argsort(end_logits)[-1: -n_best_size - 1: -1].tolist()
 
             for start_index in start_indexes:
                 for end_index in end_indexes:
                     # out-of-scope answers는 고려하지 않습니다.
                     if (
-                        start_index >= len(offset_mapping)
-                        or end_index >= len(offset_mapping)
-                        or offset_mapping[start_index] is None
-                        or offset_mapping[end_index] is None
+                            start_index >= len(offset_mapping)
+                            or end_index >= len(offset_mapping)
+                            or offset_mapping[start_index] is None
+                            or offset_mapping[end_index] is None
                     ):
                         continue
                     # 길이가 < 0 또는 > max_answer_length인 answer도 고려하지 않습니다.
                     if (
-                        end_index < start_index
-                        or end_index - start_index + 1 > max_answer_length
+                            end_index < start_index
+                            or end_index - start_index + 1 > max_answer_length
                     ):
                         continue
                     # 최대 context가 없는 answer도 고려하지 않습니다.
                     if (
-                        token_is_max_context is not None
-                        and not token_is_max_context.get(str(start_index), False)
+                            token_is_max_context is not None
+                            and not token_is_max_context.get(str(start_index), False)
                     ):
                         continue
                     prelim_predictions.append(
@@ -213,7 +216,7 @@ def postprocess_qa_predictions(
 
         # 낮은 점수로 인해 제거된 경우 minimum null prediction을 다시 추가합니다.
         if version_2_with_negative and not any(
-            p["offsets"] == (0, 0) for p in predictions
+                p["offsets"] == (0, 0) for p in predictions
         ):
             predictions.append(min_null_prediction)
 
@@ -221,13 +224,12 @@ def postprocess_qa_predictions(
         context = example["context"]
         for pred in predictions:
             offsets = pred.pop("offsets")
-            pred["text"] = context[offsets[0] : offsets[1]]
+            pred["text"] = context[offsets[0]: offsets[1]]
 
         # rare edge case에는 null이 아닌 예측이 하나도 없으며 failure를 피하기 위해 fake prediction을 만듭니다.
         if len(predictions) == 0 or (
-            len(predictions) == 1 and predictions[0]["text"] == ""
+                len(predictions) == 1 and predictions[0]["text"] == ""
         ):
-
             predictions.insert(
                 0, {"text": "empty", "start_logit": 0.0, "end_logit": 0.0, "score": 0.0}
             )
@@ -253,9 +255,9 @@ def postprocess_qa_predictions(
 
             # threshold를 사용해서 null prediction을 비교합니다.
             score_diff = (
-                null_score
-                - best_non_null_pred["start_logit"]
-                - best_non_null_pred["end_logit"]
+                    null_score
+                    - best_non_null_pred["start_logit"]
+                    - best_non_null_pred["end_logit"]
             )
             scores_diff_json[example["id"]] = float(score_diff)  # JSON-serializable 가능
             if score_diff > null_score_diff_threshold:
@@ -317,18 +319,17 @@ def postprocess_qa_predictions(
 
 
 def check_no_error(
-    data_args: DataTrainingArguments,
-    training_args: TrainingArguments,
-    datasets: DatasetDict,
-    tokenizer,
+        data_args: DataTrainingArguments,
+        training_args: TrainingArguments,
+        datasets: DatasetDict,
+        tokenizer,
 ) -> Tuple[Any, int]:
-
     # last checkpoint 찾기.
     last_checkpoint = None
     if (
-        os.path.isdir(training_args.output_dir)
-        and training_args.do_train
-        and not training_args.overwrite_output_dir
+            os.path.isdir(training_args.output_dir)
+            and training_args.do_train
+            and not training_args.overwrite_output_dir
     ):
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
@@ -360,3 +361,153 @@ def check_no_error(
     if "validation" not in datasets:
         raise ValueError("--do_eval requires a validation dataset")
     return last_checkpoint, max_seq_length
+
+
+def get_args():
+    '''
+    훈련 시 입력한 각종 Argument를 반환하는 함수
+    '''
+    parser = HfArgumentParser(
+        (ModelArguments, DataTrainingArguments, TrainingArguments)
+    )
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    if training_args.project_name is not None:
+        training_args.output_dir = os.path.join(training_args.output_dir, training_args.project_name)
+
+    # model_name_or_path 를 tokenizer_name 에 지정해줌
+    model_args.tokenizer_name = model_args.model_name_or_path
+
+    # post_processing_function 에서 사용하기 위해 추가
+    training_args.max_answer_length = data_args.max_answer_length
+
+    if training_args.do_predict:
+        # 학습시 모델을 저장했던 폴더를 model_args.model_name_or_path 에 지정해줌
+        model_args.model_name_or_path = training_args.output_dir
+
+        # inference 시에는 prediction 결과를 저장하는 곳이 output_dir 이 되므로 새로 지정해줌
+        assert training_args.project_name, "project_name 을 arguments.py 에서 지정해주세요!"
+        training_args.output_dir = os.path.join('./outputs', training_args.project_name)
+
+        data_args.dataset_name = '../data/test_dataset/'
+
+    print(training_args)
+    print(f"model is from {model_args.model_name_or_path}")
+    print(f"data is from {data_args.dataset_name}")
+
+    return model_args, data_args, training_args
+
+
+def set_seed_everything(seed):
+    '''Random Seed를 고정하는 함수'''
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
+    set_seed(seed)
+
+    return None
+
+
+def get_models(training_args, model_args):
+    # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
+    # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
+    model_config = AutoConfig.from_pretrained(
+        model_args.config_name
+        if model_args.config_name is not None
+        else model_args.model_name_or_path,
+    )
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.tokenizer_name
+        if model_args.tokenizer_name is not None
+        else model_args.model_name_or_path,
+        # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
+        # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
+        # rust version이 비교적 속도가 빠릅니다.
+        use_fast=True,
+    )
+    model = AutoModelForQuestionAnswering.from_pretrained(
+        model_args.model_name_or_path,
+        from_tf=bool(".ckpt" in model_args.model_name_or_path),
+        config=model_config,
+    )
+
+    return tokenizer, model_config, model
+
+
+def get_data(training_args, model_args, data_args, tokenizer):
+    '''train, validation, test의 dataloader와 dataset를 반환하는 함수'''
+    datasets = load_from_disk(data_args.dataset_name)
+    print(datasets)
+
+    data_processor = DataProcessor(tokenizer, model_args, data_args)
+
+    data_collator = DataCollatorWithPadding(
+        tokenizer, pad_to_multiple_of=(8 if training_args.fp16 else None)
+    )
+
+    if training_args.do_train:
+        train_dataset = datasets['train']
+        eval_dataset = datasets['validation']
+
+        train_column_names = train_dataset.column_names
+        eval_column_names = eval_dataset.column_names
+
+        train_dataset = data_processor.train_tokenizer(train_dataset, train_column_names)
+        eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_column_names)
+
+        return datasets, train_dataset, eval_dataset, data_collator
+    else:
+        # test data 에는 context 가 없으므로 retrieval 해서 추가해줌
+        if data_args.eval_retrieval:
+            datasets = run_sparse_retrieval(
+                tokenizer.tokenize,
+                datasets,
+                training_args,
+                data_args,
+            )
+        # test data 폴더에 들어있는 데이터에서도 validation 으로 되어있음
+        eval_dataset = datasets['validation']
+
+        eval_column_names = eval_dataset.column_names
+
+        eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_column_names)
+
+        return datasets, eval_dataset, data_collator
+
+
+# Post-processing:
+def post_processing_function(examples, features, predictions, training_args):
+    # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
+    predictions = postprocess_qa_predictions(
+        examples=examples,
+        features=features,
+        predictions=predictions,
+        max_answer_length=training_args.max_answer_length,
+        output_dir=training_args.output_dir,
+    )
+    # Metric을 구할 수 있도록 Format을 맞춰줍니다.
+    formatted_predictions = [
+        {"id": k, "prediction_text": v} for k, v in predictions.items()
+    ]
+    if training_args.do_predict:
+        return formatted_predictions
+
+    elif training_args.do_eval:
+        references = [
+            {"id": ex["id"], "answers": ex['answers']}
+            for ex in examples
+        ]
+        return EvalPrediction(
+            predictions=formatted_predictions, label_ids=references
+        )
+
+
+metric = load_metric("squad")
+
+
+def compute_metrics(p: EvalPrediction):
+    return metric.compute(predictions=p.predictions, references=p.label_ids)
