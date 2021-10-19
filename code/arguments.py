@@ -33,7 +33,9 @@ class TrainingArguments(OriginTrainingArguments):
     learning_rate: float = field(default=5e-5, metadata={"help": "The initial learning rate for AdamW."})
     weight_decay: float = field(default=0.0, metadata={"help": "Weight decay for AdamW if we apply some."})
     adam_epsilon: float = field(default=1e-8, metadata={"help": "Epsilon for AdamW optimizer."})
-    warmup_steps: int = field(default=1000, metadata={"help": "Linear warmup over warmup_steps."})
+    warmup_ratio: float = field(
+        default=0.1, metadata={"help": "Linear warmup over warmup_ratio fraction of total steps."}
+    )
     logging_steps: int = field(default=100, metadata={"help": "Log every X updates steps."})
     load_best_model_at_end: Optional[bool] = field(
         default=True,

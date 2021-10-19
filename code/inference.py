@@ -29,7 +29,7 @@ def main():
     set_seed_everything(training_args.seed)
 
     # get_tokenizer, model
-    tokenizer, model = get_models(training_args, model_args)
+    tokenizer, model_config, model = get_models(training_args, model_args)
 
     # logging 설정
     logging.basicConfig(

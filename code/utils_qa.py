@@ -415,39 +415,27 @@ def set_seed_everything(seed):
 def get_models(training_args, model_args):
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
-    if training_args.do_train:
-        model_config = AutoConfig.from_pretrained(
-            model_args.config_name
-            if model_args.config_name is not None
-            else model_args.model_name_or_path,
-        )
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_args.tokenizer_name
-            if model_args.tokenizer_name is not None
-            else model_args.model_name_or_path,
-            # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
-            # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
-            # rust version이 비교적 속도가 빠릅니다.
-            use_fast=True,
-        )
-        model = AutoModelForQuestionAnswering.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=model_config,
-        )
+    model_config = AutoConfig.from_pretrained(
+        model_args.config_name
+        if model_args.config_name is not None
+        else model_args.model_name_or_path,
+    )
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.tokenizer_name
+        if model_args.tokenizer_name is not None
+        else model_args.model_name_or_path,
+        # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
+        # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
+        # rust version이 비교적 속도가 빠릅니다.
+        use_fast=True,
+    )
+    model = AutoModelForQuestionAnswering.from_pretrained(
+        model_args.model_name_or_path,
+        from_tf=bool(".ckpt" in model_args.model_name_or_path),
+        config=model_config,
+    )
 
-        return tokenizer, model_config, model
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_args.tokenizer_name,
-            use_fast=True
-        )
-        model = AutoModelForQuestionAnswering.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        )
-
-        return tokenizer, model
+    return tokenizer, model_config, model
 
 
 def get_data(training_args, model_args, data_args, tokenizer):
