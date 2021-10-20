@@ -7,7 +7,7 @@ from transformers import TrainingArguments as OriginTrainingArguments, IntervalS
 @dataclass
 class TrainingArguments(OriginTrainingArguments):
     output_dir: str = field(
-        default='./models',
+        default='../output',
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
     project_name: Optional[str] = field(
