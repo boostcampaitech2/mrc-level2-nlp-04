@@ -7,6 +7,7 @@ import pickle
 import numpy as np
 import pandas as pd
 
+import argparse
 import hashlib 
 import pprint
 
@@ -14,6 +15,10 @@ from tqdm.auto import tqdm
 from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
 from torch.utils.data import DataLoader, TensorDataset
+
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+import torch.nn.functional as F
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -64,49 +69,77 @@ class BertEncoder(BertPreTrainedModel):
         pooled_output = outputs[1]
         return pooled_output
 
-dataset = load_from_disk("../data/test_dataset")
+def main(args):
+    Targs = TrainingArguments(
+        output_dir="dense_retrieval",
+        evaluation_strategy="epoch",
+        learning_rate=3e-4,
+        per_device_train_batch_size=2,
+        per_device_eval_batch_size=2,
+        num_train_epochs=2,
+        weight_decay=0.01
+    )
+    # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    model_checkpoint = "klue/bert-base"
+    tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
+    
+    if args.is_train:
+        p_encoder_dir, q_encoder_dir = model_checkpoint, model_checkpoint
+        dataset = load_from_disk(args.train_dataset_dir)
+    else:
+        dataset = load_from_disk(args.test_dataset_dir)
+        p_encoder_dir, q_encoder_dir = args.p_encoder_dir, args.q_encoder_dir
+        
+        f = Features(
+                {
+                    "context": Value(dtype="string", id=None),
+                    "id": Value(dtype="string", id=None),
+                    "question": Value(dtype="string", id=None),
+                }
+            )
+    p_encoder = BertEncoder.from_pretrained(p_encoder_dir).to(Targs.device)
+    q_encoder = BertEncoder.from_pretrained(q_encoder_dir).to(Targs.device)
 
-f = Features(
-        {
-            "context": Value(dtype="string", id=None),
-            "id": Value(dtype="string", id=None),
-            "question": Value(dtype="string", id=None),
-        }
+    retriever = DenseRetrieval(
+        args = Targs,
+        dataset = dataset['train'] if args.is_train else None, # train을 위한 dataset
+        num_neg = 2,
+        tokenizer = tokenizer,
+        p_encoder = p_encoder,
+        q_encoder = q_encoder,
+        wiki_path = args.wiki_path,
+        is_train = args.is_train
     )
 
-Targs = TrainingArguments(
-    output_dir="dense_retrieval",
-    evaluation_strategy="epoch",
-    learning_rate=3e-4,
-    per_device_train_batch_size=2,
-    per_device_eval_batch_size=2,
-    num_train_epochs=2,
-    weight_decay=0.01
-)
-# device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-model_checkpoint = "klue/bert-base"
-tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
-p_encoder_dir, q_encoder_dir = "../p_encoder_dir", "../q_encoder_dir/" 
+    if args.is_train:
+        retriever.train()
+        p_encoder.save_pretrained(args.p_encoder_dir)
+        q_encoder.save_pretrained(args.q_encoder_dir)
+    else:     
+        retriever.get_dense_embedding()
+        df = retriever.retrieve(dataset["validation"], topk=3)
+        df_datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+        print(df_datasets)
 
-if p_encoder_dir == None:
-    p_encoder_dir = model_checkpoint            
-if q_encoder_dir == None:
-    q_encoder_dir = model_checkpoint
-
-p_encoder = BertEncoder.from_pretrained(p_encoder_dir).to(Targs.device)
-q_encoder = BertEncoder.from_pretrained(q_encoder_dir).to(Targs.device)
-
-
-retriever = DenseRetrieval(
-    args = Targs,
-    dataset = dataset,
-    num_neg = 2,
-    tokenizer = tokenizer,
-    p_encoder = p_encoder,
-    q_encoder = q_encoder,
-    wiki_path = "../wikipedia_documents.json",
-)
-
-retriever.get_dense_embedding()
-df = retriever.retrieve(dataset["validation"], topk=3)
-print(df)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="")
+    parser.add_argument(
+        "--p_encoder_dir", default="../p_encoder_dir", type=str, help=""
+    )
+    parser.add_argument(
+        "--q_encoder_dir", default="../q_encoder_dir", type=str, help=""
+    )
+    parser.add_argument(
+        "--wiki_path", default="../wikipedia_documents.json", type=str, help=""
+    )
+    parser.add_argument(
+        "--train_dataset_dir", default="../data/train_dataset", type=str, help=""
+    )
+    parser.add_argument(
+        "--test_dataset_dir", default="../data/test_dataset", type=str, help=""
+    )
+    parser.add_argument(
+        "--is_train", default=False, type=bool, help=""
+    )
+    args = parser.parse_args()
+    main(args)

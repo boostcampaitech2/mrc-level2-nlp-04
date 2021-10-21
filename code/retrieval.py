@@ -15,6 +15,10 @@ from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
 from torch.utils.data import DataLoader, TensorDataset
 
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+import torch.nn.functional as F
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from datasets import (
@@ -402,6 +406,7 @@ class DenseRetrieval:
         args,
         dataset,
         wiki_path,
+        is_train,
         num_neg,
         tokenizer,
         p_encoder,
@@ -414,7 +419,7 @@ class DenseRetrieval:
         """
 
         self.args = args
-        # self.is_train = is_train
+        self.is_train = is_train
         self.dataset = dataset
         self.wiki_path = wiki_path
         self.num_neg = num_neg
@@ -427,8 +432,8 @@ class DenseRetrieval:
         self.p_embedding_set = p_embedding_set
         self.q_embedding_set = q_embedding_set
         
-        # if self.is_train:
-        #     self.prepare_in_batch_negative(num_neg=num_neg)
+        if self.is_train:
+            self.prepare_in_batch_negative(num_neg=num_neg)
         
         with open(wiki_path, "r", encoding="utf-8") as f:
             wiki = json.load(f)
@@ -602,7 +607,7 @@ class DenseRetrieval:
         else:
             print("Build passage embedding")
             p_embedding_np = self.create_passage_embedding()
-            self.p_embedding_set = np.reshape(p_embedding_np, (-1, p_embedding_np.shape[2]))
+            self.p_embedding_set = np.reshape(p_embedding_np, (-1, p_embedding_np.shape[2]-1))
             print(self.p_embedding_set.shape)
             with open(emd_path, "wb") as file:
                 pickle.dump(self.p_embedding_set, file)
@@ -646,8 +651,8 @@ class DenseRetrieval:
             with tqdm(self.train_dataloader, unit="batch") as tepoch:
                 for batch in tepoch:
 
-                    p_encoder.train()
-                    q_encoder.train()
+                    self.p_encoder.train()
+                    self.q_encoder.train()
             
                     targets = torch.zeros(batch_size).long() # positive example은 전부 첫 번째에 위치하므로
                     targets = targets.to(args.device)
@@ -787,11 +792,14 @@ class DenseRetrieval:
         for i in range(result.shape[0]):
             # print(f'result[{i}] : {result[i]}')
             # print(f'result : {np.argsort(result[i])}')
-            sorted_result = np.argsort(result[i])[::-1]
+            sorted_result = np.argsort(result[i,:])[::-1]
             # print(f'sorted_result : {sorted_result}')
             # print(f'sorted_result len : {len(sorted_result)}')
 
             doc_scores.append(result[i, :][sorted_result].tolist()[:k])
+            # print(sorted(sorted_result.tolist())[0:3])
+            # print(sorted(sorted_result.tolist())[-1])
+            # exit()
             doc_indices.append(sorted_result.tolist()[:k])
         return doc_scores, doc_indices
 
@@ -842,6 +850,8 @@ class DenseRetrieval:
             for idx, example in enumerate(
                 tqdm(query_or_dataset, desc="Dense retrieval: ")
             ):
+                print(f'doc_indices[idx] : {doc_indices[idx]}')
+                print(f'length wiki : {len(self.wiki_contexts)}')
                 tmp = {
                     # Query와 해당 id를 반환합니다.
                     "question": example["question"],
@@ -924,9 +934,6 @@ if __name__ == "__main__":
     from transformers import AutoTokenizer
 
     if args.use_dpr:
-        import torch
-        from torch.utils.data import DataLoader, TensorDataset
-        import torch.nn.functional as F
         
         Targs = TrainingArguments(
             output_dir="dense_retrieval",
