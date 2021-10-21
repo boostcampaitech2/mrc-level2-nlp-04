@@ -28,7 +28,7 @@ from tqdm.auto import tqdm
 import torch
 import random
 from transformers import is_torch_available, PreTrainedTokenizerFast, HfArgumentParser, AutoConfig, AutoTokenizer, \
-    AutoModelForQuestionAnswering, DataCollatorWithPadding
+    AutoModelForQuestionAnswering, DataCollatorWithPadding, T5Tokenizer, T5Config, AutoModelForSeq2SeqLM
 from transformers.trainer_utils import get_last_checkpoint, EvalPrediction
 
 from datasets import DatasetDict, load_from_disk, load_metric
@@ -412,28 +412,33 @@ def set_seed_everything(seed):
     return None
 
 
-def get_models(training_args, model_args):
+def get_models(model_args):
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
-    model_config = AutoConfig.from_pretrained(
-        model_args.config_name
-        if model_args.config_name is not None
-        else model_args.model_name_or_path,
-    )
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name is not None
-        else model_args.model_name_or_path,
-        # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
-        # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
-        # rust version이 비교적 속도가 빠릅니다.
-        use_fast=True,
-    )
-    model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=model_config,
-    )
+    if model_args.is_cbqa:
+        model_config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, use_fast=True)
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_args.model_name_or_path)
+    else:
+        model_config = AutoConfig.from_pretrained(
+            model_args.config_name
+            if model_args.config_name is not None
+            else model_args.model_name_or_path,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_args.tokenizer_name
+            if model_args.tokenizer_name is not None
+            else model_args.model_name_or_path,
+            # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
+            # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
+            # rust version이 비교적 속도가 빠릅니다.
+            use_fast=True,
+        )
+        model = AutoModelForQuestionAnswering.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=model_config,
+        )
 
     return tokenizer, model_config, model
 

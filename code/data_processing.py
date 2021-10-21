@@ -128,7 +128,7 @@ class DataProcessor():
 
     def train_tokenizer(self, train_dataset, column_names):
         train_dataset = train_dataset.map(
-            self.prepare_train_features,
+            self.prepare_train_features if not self.model_args.is_cbqa else self.prepare_cbqa_features,
             batched=True,
             num_proc=self.data_args.preprocessing_num_workers,
             remove_columns=column_names,
@@ -138,10 +138,27 @@ class DataProcessor():
 
     def valid_tokenizer(self, valid_dataset, column_names):
         valid_dataset = valid_dataset.map(
-            self.prepare_validation_features,
+            self.prepare_validation_features if not self.model_args.is_cbqa else self.prepare_cbqa_features,
             batched=True,
             num_proc=self.data_args.preprocessing_num_workers,
             remove_columns=column_names,
             load_from_cache_file=not self.data_args.overwrite_cache,
         )
         return valid_dataset
+
+    def prepare_cbqa_features(self, examples):
+        inputs = [f"질문: {q} 문장: {c}" for q, c in zip(examples['question'], examples['context'])]
+        targets = [f"{a['text'][0]}" for a in examples['answers']]
+        model_inputs = self.tokenizer(inputs, max_length=self.data_args.max_seq_length,
+                                      padding=False, truncation=True)
+
+        # Setup the tokenizer for targets
+        with self.tokenizer.as_target_tokenizer():
+            labels = self.tokenizer(targets, max_length=self.data_args.max_answer_length,
+                                    padding=False, truncation=True)
+
+        model_inputs['labels'] = labels['input_ids']
+        model_inputs['example_id'] = []
+        for i in range(len(model_inputs['labels'])):
+            model_inputs['example_id'].append(examples['id'][i])
+        return model_inputs

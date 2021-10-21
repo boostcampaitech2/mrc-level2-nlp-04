@@ -11,7 +11,7 @@ class TrainingArguments(OriginTrainingArguments):
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
     project_name: Optional[str] = field(
-        # PR 하실때는 None 으로 바꿔서 올려주세요! 얘의 목적은 wandb project name 설정을 위함입니다.
+        # TODO PR 하실때는 None 으로 바꿔서 올려주세요! 얘의 목적은 wandb project name 설정을 위함입니다.
         default=None,
         metadata={"help": "wandb project name"},
     )
@@ -84,6 +84,12 @@ class ModelArguments:
         default=None,
         metadata={
             "help": "Pretrained tokenizer name or path if not the same as model_name"
+        },
+    )
+    is_cbqa: bool = field(
+        default=False,
+        metadata={
+            "help": "whether to use Closed Book QA"
         },
     )
 

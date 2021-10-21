@@ -394,7 +394,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
-        "--dataset_name", metavar="./data/train_dataset", type=str, help=""
+        "--dataset_name", metavar="../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
         "--model_name_or_path",
@@ -402,7 +402,7 @@ if __name__ == "__main__":
         type=str,
         help="",
     )
-    parser.add_argument("--data_path", metavar="./data", type=str, help="")
+    parser.add_argument("--data_path", metavar="../data", type=str, help="")
     parser.add_argument(
         "--context_path", metavar="wikipedia_documents", type=str, help=""
     )
