@@ -1,0 +1,24 @@
+{
+    "os": "Linux-4.4.0-59-generic-x86_64-with-glibc2.10",
+    "python": "3.8.5",
+    "heartbeatAt": "2021-10-21T20:02:11.355903",
+    "startedAt": "2021-10-21T20:02:09.460559",
+    "docker": null,
+    "gpu": "Tesla V100-PCIE-32GB",
+    "gpu_count": 1,
+    "cpu_count": 8,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "dpr_train_2.py",
+    "codePath": "code/retrieval_folder/dpr_train_2.py",
+    "git": {
+        "remote": "https://github.com/boostcampaitech2/mrc-level2-nlp-04.git",
+        "commit": "916e92ded0383de93982579a7633f3745ff7be75"
+    },
+    "email": null,
+    "root": "/opt/ml/mrc-level2-nlp-04",
+    "host": "6375ded6125c",
+    "username": "root",
+    "executable": "/opt/conda/bin/python"
+}
