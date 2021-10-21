@@ -5,11 +5,15 @@ import faiss
 import pickle
 import numpy as np
 import pandas as pd
+import torch
+
+import hashlib 
+import pprint
 
 from tqdm.auto import tqdm
 from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
-
+from torch.utils.data import DataLoader, TensorDataset
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -19,6 +23,11 @@ from datasets import (
     concatenate_datasets,
 )
 
+from transformers import(
+            BertModel, BertPreTrainedModel,
+            AdamW, get_linear_schedule_with_warmup,
+            TrainingArguments,
+        )
 
 @contextmanager
 def timer(name):
@@ -392,24 +401,43 @@ class DenseRetrieval:
     def __init__(self,
         args,
         dataset,
+        wiki_path,
         num_neg,
         tokenizer,
         p_encoder,
-        q_encoder
+        q_encoder,
+        q_embedding_set = None,
+        p_embedding_set = None
     ):
         """
         학습과 추론에 사용될 여러 셋업을 마쳐봅시다.
         """
 
         self.args = args
+        # self.is_train = is_train
         self.dataset = dataset
+        self.wiki_path = wiki_path
         self.num_neg = num_neg
 
         self.tokenizer = tokenizer
         self.p_encoder = p_encoder
         self.q_encoder = q_encoder
+        
+        # self.contexts = None if is_test else dataset['context']
+        self.p_embedding_set = p_embedding_set
+        self.q_embedding_set = q_embedding_set
+        
+        # if self.is_train:
+        #     self.prepare_in_batch_negative(num_neg=num_neg)
+        
+        with open(wiki_path, "r", encoding="utf-8") as f:
+            wiki = json.load(f)
 
-        self.prepare_in_batch_negative(num_neg=num_neg)
+        self.wiki_contexts = list(
+            dict.fromkeys([v["text"] for v in wiki.values()])
+        )  # set 은 매번 순서가 바뀌므로
+        print(f"Lengths of unique contexts : {len(self.wiki_contexts)}")
+        self.ids = list(range(len(self.wiki_contexts)))
 
     def prepare_in_batch_negative(self,
         dataset=None,
@@ -485,6 +513,100 @@ class DenseRetrieval:
             batch_size=self.args.per_device_train_batch_size
         )
 
+    def create_passage_embedding(self):
+        batch_size = self.args.per_device_eval_batch_size
+        
+        wiki_seqs = self.tokenizer(
+            self.wiki_contexts,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt"
+        )
+        wiki_dataset = TensorDataset(
+            wiki_seqs["input_ids"],
+            wiki_seqs["attention_mask"],
+            wiki_seqs["token_type_ids"]
+        )
+        wiki_dataloader = DataLoader(
+            wiki_dataset,
+            batch_size=batch_size
+        )
+        print(f'start')
+        p_embedding_set = []
+        with tqdm(wiki_dataloader, unit="batch") as tepoch:
+            for batch in tepoch:
+                p_inputs = {
+                    "input_ids": batch[0].view(batch_size, -1).to(self.args.device),
+                    "attention_mask": batch[1].view(batch_size, -1).to(self.args.device),
+                    "token_type_ids": batch[2].view(batch_size, -1).to(self.args.device)
+                }
+                p_outputs = self.p_encoder(**p_inputs)
+                # print(f'1. p_outpus : {p_outputs}')
+                p_outputs = p_outputs.view(batch_size, 1, -1)
+                # print(f'2. p_outpus : {p_outputs}')
+                p_embedding_set.append(p_outputs.detach().cpu().numpy())
+        return np.array(p_embedding_set)
+
+    def create_question_embedding(self, queries):
+        batch_size = self.args.per_device_eval_batch_size
+        
+        q_seqs = self.tokenizer(
+            queries,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt"
+        )
+        q_dataset = TensorDataset(
+            q_seqs["input_ids"],
+            q_seqs["attention_mask"],
+            q_seqs["token_type_ids"]
+        )
+        q_dataloader = DataLoader(
+            q_dataset,
+            batch_size=batch_size
+        )
+        
+        print(f'start')
+        q_embedding_set = []
+        with tqdm(q_dataloader, unit="batch") as tepoch:
+            for batch in tepoch:
+                q_inputs = {
+                    "input_ids": batch[0].view(batch_size, -1).to(self.args.device),
+                    "attention_mask": batch[1].view(batch_size, -1).to(self.args.device),
+                    "token_type_ids": batch[2].view(batch_size, -1).to(self.args.device)
+                }
+                q_outputs = self.q_encoder(**q_inputs)
+                # print(f'1. p_outpus : {p_outputs}')
+                q_outputs = q_outputs.view(batch_size, 1, -1)
+                # print(f'2. p_outpus : {p_outputs}')
+                q_embedding_set.append(q_outputs.detach().cpu().numpy())
+        return np.array(q_embedding_set)
+
+    def get_dense_embedding(self) -> NoReturn:
+
+        """
+        Summary:
+            Passage Embedding을 만들고
+            TFIDF와 Embedding을 pickle로 저장합니다.
+            만약 미리 저장된 파일이 있으면 저장된 pickle을 불러옵니다.
+        """
+
+        # Pickle을 저장합니다.
+        pickle_name = f"dense_embedding.bin"
+        emd_path = os.path.join('../', pickle_name)
+
+        if os.path.isfile(emd_path):
+            with open(emd_path, "rb") as file:
+                self.p_embedding_set = pickle.load(file)
+            print("Embedding pickle load.")
+        else:
+            print("Build passage embedding")
+            p_embedding_np = self.create_passage_embedding()
+            self.p_embedding_set = np.reshape(p_embedding_np, (-1, p_embedding_np.shape[2]))
+            print(self.p_embedding_set.shape)
+            with open(emd_path, "wb") as file:
+                pickle.dump(self.p_embedding_set, file)
+            print("Embedding pickle saved.")
 
     def train(self, args=None):
         if args is None:
@@ -521,7 +643,6 @@ class DenseRetrieval:
         train_iterator = tqdm(range(int(args.num_train_epochs)), desc="Epoch")
         # for _ in range(int(args.num_train_epochs)):
         for _ in train_iterator:
-
             with tqdm(self.train_dataloader, unit="batch") as tepoch:
                 for batch in tepoch:
 
@@ -572,7 +693,6 @@ class DenseRetrieval:
 
                     del p_inputs, q_inputs
 
-
     def get_relevant_doc(self,
         query,
         k=1,
@@ -598,7 +718,7 @@ class DenseRetrieval:
                 [query],
                 padding="max_length",
                 truncation=True,
-                return_tensors="pt"
+                return_tensors="pt",
             ).to(args.device)
             q_emb = q_encoder(**q_seqs_val).to("cpu")  # (num_query=1, emb_dim)
 
@@ -621,9 +741,125 @@ class DenseRetrieval:
 
         dot_prod_scores = torch.matmul(q_emb, torch.transpose(p_embs, 0, 1))
         rank = torch.argsort(dot_prod_scores, dim=1, descending=True).squeeze()
+        dot_prod_scores_to_list = dot_prod_scores.tolist()
+        # print(f'top-{k} score : {dot_prod_scores_to_list[0][rank[:k]]}')
+        # print(self.dataset['context'][rank[0]])
+        # result = [index for index in rank[:k]]
+        
+        return dot_prod_scores_to_list[0][:k], rank[:k]
 
-        return rank[:k]
+    def get_relevant_doc_bulk(
+       self,queries: List, k: Optional[int] = 1
+    ) -> Tuple[List, List]:
 
+        """
+        Arguments:
+            queries (List):
+                하나의 Query를 받습니다.
+            k (Optional[int]): 1
+                상위 몇 개의 Passage를 반환할지 정합니다.
+        Note:
+            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
+        """
+        doc_scores = []
+        doc_indices = []
+        
+        q_embedding_set = self.create_question_embedding(queries)
+        q_embedding_set = np.reshape(q_embedding_set, (-1, 768))
+        
+        self.p_embedding_set = np.array(self.p_embedding_set)
+        self.p_embedding_set = np.reshape(self.p_embedding_set,(-1, 768))
+        print(f'q_embedding_set shape : {q_embedding_set.shape}')
+        print(f'self.p_embedding_set shape : {self.p_embedding_set.shape}')
+        # dot_prod_scores = torch.matmul(torch.Tensor(q_embedding_set), torch.transpose(torch.Tensor(self.p_embedding_set), 0, 1))
+        
+        result = q_embedding_set @ self.p_embedding_set.T
+        # rank = np.argsort(dot_prod_scores, axis=1, descending=True).squeeze()
+        # dot_prod_scores_to_list = dot_prod_scores.tolist()
+        print(f'result.shape : {result.shape}')
+        if not isinstance(result, np.ndarray):
+            result = result.toarray()
+        print(f'result.shape : {result.shape}')
+        count = 1
+        doc_scores = []
+        doc_indices = []
+        print(f'result.shape[0] : {result.shape[0]}')
+        for i in range(result.shape[0]):
+            # print(f'result[{i}] : {result[i]}')
+            # print(f'result : {np.argsort(result[i])}')
+            sorted_result = np.argsort(result[i])[::-1]
+            # print(f'sorted_result : {sorted_result}')
+            # print(f'sorted_result len : {len(sorted_result)}')
+
+            doc_scores.append(result[i, :][sorted_result].tolist()[:k])
+            doc_indices.append(sorted_result.tolist()[:k])
+        return doc_scores, doc_indices
+
+    def retrieve(
+        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
+    ) -> Union[Tuple[List, List], pd.DataFrame]:
+
+        """
+        Arguments:
+            query_or_dataset (Union[str, Dataset]):
+                str이나 Dataset으로 이루어진 Query를 받습니다.
+                str 형태인 하나의 query만 받으면 `get_relevant_doc`을 통해 유사도를 구합니다.
+                Dataset 형태는 query를 포함한 HF.Dataset을 받습니다.
+                이 경우 `get_relevant_doc_bulk`를 통해 유사도를 구합니다.
+            topk (Optional[int], optional): Defaults to 1.
+                상위 몇 개의 passage를 사용할 것인지 지정합니다.
+
+        Returns:
+            1개의 Query를 받는 경우  -> Tuple(List, List)
+            다수의 Query를 받는 경우 -> pd.DataFrame: [description]
+
+        Note:
+            다수의 Query를 받는 경우,
+                Ground Truth가 있는 Query (train/valid) -> 기존 Ground Truth Passage를 같이 반환합니다.
+                Ground Truth가 없는 Query (test) -> Retrieval한 Passage만 반환합니다.
+        """
+
+        assert self.p_encoder or  self.q_encoder is not None, "q_encoder와 p_encoder를 먼저 생성해줘야합니다."
+
+        if isinstance(query_or_dataset, str):
+            doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
+            print("[Search query]\n", query_or_dataset, "\n")
+
+            for i in range(topk):
+                print(f"Top-{i+1} passage with score {doc_scores[i]:4f}")
+                print(self.contexts[doc_indices[i]])
+
+            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
+
+        elif isinstance(query_or_dataset, Dataset):
+
+            # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
+            total = []
+            with timer("query exhaustive search"):
+                doc_scores, doc_indices = self.get_relevant_doc_bulk(
+                    query_or_dataset["question"], k=topk
+                )
+            for idx, example in enumerate(
+                tqdm(query_or_dataset, desc="Dense retrieval: ")
+            ):
+                tmp = {
+                    # Query와 해당 id를 반환합니다.
+                    "question": example["question"],
+                    "id": example["id"],
+                    # Retrieve한 Passage의 id, context를 반환합니다.
+                    "context_id": doc_indices[idx],
+                    "context": " ".join(
+                        [self.wiki_contexts[pid] for pid in doc_indices[idx]]
+                    ),
+                }
+                if "context" in example.keys() and "answers" in example.keys():
+                    # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                    tmp["original_context"] = example["context"]
+                    tmp["answers"] = example["answers"]
+                total.append(tmp)
+
+            cqas = pd.DataFrame(total)
+            return cqas
 
 class BertEncoder(BertPreTrainedModel):
     def __init__(self, config):
@@ -648,14 +884,13 @@ class BertEncoder(BertPreTrainedModel):
         pooled_output = outputs[1]
         return pooled_output
 
-
 if __name__ == "__main__":
 
     import argparse
 
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
-        "--dataset_name", metavar="./data/train_dataset", type=str, help=""
+        "--dataset_name", metavar="../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
         "--model_name_or_path",
@@ -663,42 +898,38 @@ if __name__ == "__main__":
         type=str,
         help="",
     )
-    parser.add_argument("--data_path", metavar="./data", type=str, help="")
+    parser.add_argument("--data_path", metavar="../data", type=str, help="")
     parser.add_argument(
         "--context_path", metavar="wikipedia_documents", type=str, help=""
     )
     parser.add_argument("--use_faiss", metavar=False, type=bool, help="")
-    parser.add_argument("--ues_dpr", metavar=False, type=bool, help="")
+    parser.add_argument("--use_dpr", metavar=False, type=bool, help="")
+    parser.add_argument("--p_encoder_dir", metavar=None, type=str, help="")
+    parser.add_argument("--q_encoder_dir", metavar=None, type=str, help="")
     args = parser.parse_args()
 
     # Test sparse
     org_dataset = load_from_disk(args.dataset_name)
+    
     full_ds = concatenate_datasets(
         [
             org_dataset["train"].flatten_indices(),
             org_dataset["validation"].flatten_indices(),
         ]
     )  # train dev 를 합친 4192 개 질문에 대해 모두 테스트
+
     print("*" * 40, "query dataset", "*" * 40)
     print(full_ds)
 
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model_name_or_path,
-        use_fast=False,
-    )
     if args.use_dpr:
         import torch
         from torch.utils.data import DataLoader, TensorDataset
         import torch.nn.functional as F
-        from transformers import(
-            BertModel, BertPreTrainedModel,
-            AdamW, get_linear_schedule_with_warmup,
-            TrainingArguments,
-        )
-        args = TrainingArguments(
-            output_dir="dense_retireval",
+        
+        Targs = TrainingArguments(
+            output_dir="dense_retrieval",
             evaluation_strategy="epoch",
             learning_rate=3e-4,
             per_device_train_batch_size=2,
@@ -706,8 +937,40 @@ if __name__ == "__main__":
             num_train_epochs=2,
             weight_decay=0.01
         )
-        retriever = DenseRetrieval()
+        # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        model_checkpoint = "klue/bert-base"
+        tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
+        p_encoder_dir, q_encoder_dir = args.p_encoder_dir, args.q_encoder_dir
+        
+        if p_encoder_dir == None:
+            p_encoder_dir = model_checkpoint            
+        if q_encoder_dir == None:
+            q_encoder_dir = model_checkpoint
+
+        p_encoder = BertEncoder.from_pretrained(p_encoder_dir).to(Targs.device)
+        q_encoder = BertEncoder.from_pretrained(q_encoder_dir).to(Targs.device)
+        
+        
+        retriever = DenseRetrieval(
+            args = Targs,
+            dataset = full_ds,
+            num_neg = 2,
+            tokenizer = tokenizer,
+            p_encoder = p_encoder,
+            q_encoder = q_encoder
+        )
+        
+        retriever.train()
+        
+        p_encoder.save_pretrained('../p_encoder_dir')
+        q_encoder.save_pretrained('../q_encoder_dir')
+        
     else:
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model_name_or_path,
+            use_fast=False,
+        )
+        
         retriever = SparseRetrieval(
             tokenize_fn=tokenizer.tokenize,
             data_path=args.data_path,
@@ -730,13 +993,13 @@ if __name__ == "__main__":
             print("correct retrieval result by faiss", df["correct"].sum() / len(df))
 
     else:
-        with timer("bulk query by exhaustive search"):
-            df = retriever.retrieve(full_ds)
-            df["correct"] = df["original_context"] == df["context"]
-            print(
-                "correct retrieval result by exhaustive search",
-                df["correct"].sum() / len(df),
-            )
+        # with timer("bulk query by exhaustive search"):
+        #     df = retriever.retrieve(full_ds)
+        #     df["correct"] = df["original_context"] == df["context"]
+        #     print(
+        #         "correct retrieval result by exhaustive search",
+        #         df["correct"].sum() / len(df),
+        #     )
 
         with timer("single query by exhaustive search"):
             scores, indices = retriever.retrieve(query)
