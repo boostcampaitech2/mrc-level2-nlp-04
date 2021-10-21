@@ -42,7 +42,6 @@ from arguments import (
 )
 from utils_retrieval import run_sparse_retrieval
 from data_processing import DataProcessor
-from model.LSTM.LSTM import ModelAttachedLSTM
 
 logger = logging.getLogger(__name__)
 
@@ -288,13 +287,13 @@ def postprocess_qa_predictions(
 
         prediction_file = os.path.join(
             output_dir,
-            "predictions.json" if prefix is None else f"predictions_{prefix}".json,
+            "predictions.json" if prefix is None else f"predictions_{prefix}.json",
         )
         nbest_file = os.path.join(
             output_dir,
             "nbest_predictions.json"
             if prefix is None
-            else f"nbest_predictions_{prefix}".json,
+            else f"nbest_predictions_{prefix}.json",
         )
         if version_2_with_negative:
             null_odds_file = os.path.join(
@@ -460,9 +459,17 @@ def get_models(training_args, model_args):
             config=model_config,
         )
     else:
-        assert model_args.additional_model.lower() in ['lstm'], "Available models are lstm. (No matter letter case)"
+        attached = model_args.additional_model.lower()
+        assert attached in ['lstm', 'bidaf'],\
+            "Available models are lstm, bidaf. (No matter letter case)"
         print("******* AttachedLSTM *******")
-        model = ModelAttachedLSTM(model_config)
+
+        if attached == 'lstm':
+            from model.LSTM.LSTM import ModelAttachedLSTM
+            model = ModelAttachedLSTM(model_config)
+        elif attached == 'bidaf':
+            from model.BiDAF.BiDAF import ModelAttachedBiDAF
+            model = ModelAttachedBiDAF(model_config)
 
     return tokenizer, model_config, model
 
@@ -517,6 +524,7 @@ def post_processing_function(examples, features, predictions, training_args):
         predictions=predictions,
         max_answer_length=training_args.max_answer_length,
         output_dir=training_args.output_dir,
+        prefix=training_args.output_dir.split('/')[3]
     )
     # Metric을 구할 수 있도록 Format을 맞춰줍니다.
     formatted_predictions = [

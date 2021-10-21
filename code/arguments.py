@@ -63,7 +63,7 @@ class TrainingArguments(OriginTrainingArguments):
     )
     eval_steps: int = field(default=100, metadata={"help": "Run an evaluation every X steps."})
     save_steps: int = field(default=100, metadata={"help": "Save checkpoint every X updates steps."})
-    early_stopping_patience: int = field(default=7, metadata={"help": "early_stopping_patience."})
+    early_stopping_patience: int = field(default=8, metadata={"help": "early_stopping_patience."})
 
 
 @dataclass
