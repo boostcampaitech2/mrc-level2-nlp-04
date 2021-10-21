@@ -86,6 +86,12 @@ class ModelArguments:
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
     )
+    additional_model: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Attach additional layer to end of model"
+        },
+    )
 
 
 @dataclass

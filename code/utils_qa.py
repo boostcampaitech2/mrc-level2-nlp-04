@@ -39,6 +39,7 @@ from arguments import (
 )
 from utils_retrieval import run_sparse_retrieval
 from data_processing import DataProcessor
+from model.LSTM.LSTM import ModelAttachedLSTM
 
 logger = logging.getLogger(__name__)
 
@@ -429,11 +430,15 @@ def get_models(training_args, model_args):
         # rust version이 비교적 속도가 빠릅니다.
         use_fast=True,
     )
-    model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=model_config,
-    )
+    if model_args.additional_model is None:
+        model = AutoModelForQuestionAnswering.from_pretrained(
+            model_args.model_name_or_path,
+            config=model_config,
+        )
+    else:
+        assert model_args.additional_model.lower() in ['lstm'], "Available models are lstm. (No matter letter case)"
+        print("******* AttachedLSTM *******")
+        model = ModelAttachedLSTM(model_config)
 
     return tokenizer, model_config, model
 
