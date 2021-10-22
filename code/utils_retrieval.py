@@ -1,9 +1,11 @@
+import os
 from typing import Callable, List
 
 from datasets import DatasetDict, Features, Value, Sequence, Dataset
-from transformers import TrainingArguments
+from transformers import TrainingArguments, AutoConfig, AutoTokenizer
 
 from arguments import DataTrainingArguments
+from model.Retrieval_Encoder.retrieval_encoder import RetrievalEncoder
 from retrieval import SparseRetrieval
 
 
@@ -58,3 +60,17 @@ def run_sparse_retrieval(
         )
     datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
     return datasets
+
+
+def get_encoders(args):
+    model_config = AutoConfig.from_pretrained(args.model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=True)
+    if args.use_trained_model:
+        p_encoder_path = os.path.join(args.output_dir, 'p_encoder')
+        q_encoder_path = os.path.join(args.output_dir, 'q_encoder')
+        p_encoder = RetrievalEncoder(p_encoder_path, model_config)
+        q_encoder = RetrievalEncoder(q_encoder_path, model_config)
+    else:
+        p_encoder = RetrievalEncoder(args.model_name_or_path, model_config)
+        q_encoder = RetrievalEncoder(args.model_name_or_path, model_config)
+    return tokenizer, p_encoder, q_encoder
