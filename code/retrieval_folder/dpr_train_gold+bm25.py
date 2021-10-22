@@ -35,7 +35,7 @@ model_checkpoint = "klue/roberta-small"
 tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 configuration = AutoConfig.from_pretrained(model_checkpoint)
 emb_size = configuration.max_position_embeddings
-training_dataset = dataset['train'][:2000]
+training_dataset = dataset['train'][:100]
 
 q_seqs = tokenizer(
     training_dataset['question'], padding="max_length", truncation=True, return_tensors='pt')
@@ -150,7 +150,7 @@ def train(args, dataset, p_model, q_model):
                 q_outputs, torch.transpose(p_outputs, 0, 1))
 
             # target: position of positive samples = diagonal element
-            targets = torch.arange(0, 2 * args.per_device_train_batch_size, 2).long()
+            targets = torch.arange(0, 2 * sim_scores.size(0), 2).long()
             if torch.cuda.is_available():
                 targets = targets.to('cuda')
 
@@ -176,7 +176,7 @@ def train(args, dataset, p_model, q_model):
 args = TrainingArguments(
     output_dir="dense_retrieval",
     evaluation_strategy="epoch",
-    learning_rate=2e-5,
+    learning_rate=5e-5,
     per_device_train_batch_size=16,
     per_device_eval_batch_size=16,
     num_train_epochs=5,
@@ -184,3 +184,51 @@ args = TrainingArguments(
 )
 
 p_encoder, q_encoder = train(args, train_dataset, p_encoder, q_encoder)
+
+
+valid_corpus = list(set([example['context'] for example in dataset['validation']]))[:10]
+sample_idx = random.choice(range(len(dataset['validation'])))
+query = dataset['validation'][sample_idx]['question']
+ground_truth = dataset['validation'][sample_idx]['context']
+
+if not ground_truth in valid_corpus:
+  valid_corpus.append(ground_truth)
+
+print(query)
+print(ground_truth, '\n\n')
+
+def to_cuda(batch):
+  return tuple(t.cuda() for t in batch)
+
+
+with torch.no_grad():
+  p_encoder.eval()
+  q_encoder.eval()
+
+  q_seqs_val = tokenizer([query], padding="max_length", truncation=True, return_tensors='pt').to('cuda')
+  q_emb = q_encoder(**q_seqs_val).to('cpu')  #(num_query, emb_dim)
+
+  p_embs = []
+  for p in valid_corpus:
+    p = tokenizer(p, padding="max_length", truncation=True, return_tensors='pt').to('cuda')
+    p_emb = p_encoder(**p).to('cpu').numpy()
+    p_embs.append(p_emb)
+
+p_embs = torch.Tensor(p_embs).squeeze()  # (num_passage, emb_dim)
+
+print(p_embs.size(), q_emb.size())
+
+dot_prod_scores = torch.matmul(q_emb, torch.transpose(p_embs, 0, 1))
+print(dot_prod_scores.size())
+
+rank = torch.argsort(dot_prod_scores, dim=1, descending=True).squeeze()
+
+
+k = 5
+print("[Search query]\n", query, "\n")
+print("[Ground truth passage]")
+print(ground_truth, "\n")
+
+for i in range(k):
+  print("Top-%d passage with score %.4f" % (i+1, dot_prod_scores.squeeze()[rank[i]]))
+  print(valid_corpus[rank[i]])
