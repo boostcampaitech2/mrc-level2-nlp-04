@@ -21,6 +21,9 @@ import json
 import logging
 import os
 from typing import Optional, Tuple, Any
+from pathlib import Path
+from glob import glob
+import re
 
 import numpy as np
 from tqdm.auto import tqdm
@@ -284,13 +287,13 @@ def postprocess_qa_predictions(
 
         prediction_file = os.path.join(
             output_dir,
-            "predictions.json" if prefix is None else f"predictions_{prefix}".json,
+            "predictions.json" if prefix is None else f"predictions_{prefix}.json",
         )
         nbest_file = os.path.join(
             output_dir,
             "nbest_predictions.json"
             if prefix is None
-            else f"nbest_predictions_{prefix}".json,
+            else f"nbest_predictions_{prefix}.json",
         )
         if version_2_with_negative:
             null_odds_file = os.path.join(
@@ -363,6 +366,23 @@ def check_no_error(
     return last_checkpoint, max_seq_length
 
 
+def increment_path(path, exist_ok=False):
+    """ Automatically increment path, i.e. runs/exp --> runs/exp0, runs/exp1 etc.
+    Args:
+        path (str or pathlib.Path): f"{model_dir}/{args.name}".
+        exist_ok (bool): whether increment path (increment if False).
+    """
+    path = Path(path)
+    if (path.exists() and exist_ok) or (not path.exists()):
+        return str(path)
+    else:
+        dirs = glob(f"{path}*")
+        matches = [re.search(rf"%s(\d+)" % path.stem, d) for d in dirs]
+        i = [int(m.groups()[0]) for m in matches if m]
+        n = max(i) + 1 if i else 2
+        return f"{path}{n}"
+
+
 def get_args():
     '''
     훈련 시 입력한 각종 Argument를 반환하는 함수
@@ -372,8 +392,12 @@ def get_args():
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    if training_args.project_name is not None:
-        training_args.output_dir = os.path.join(training_args.output_dir, training_args.project_name)
+    assert training_args.project_name is not None, "[Error] Project name needed"
+    training_args.output_dir = os.path.join(
+        training_args.output_dir, training_args.project_name, training_args.run_name
+    )
+    if not training_args.do_predict:
+        training_args.output_dir = increment_path(training_args.output_dir)
 
     # model_name_or_path 를 tokenizer_name 에 지정해줌
     model_args.tokenizer_name = model_args.model_name_or_path
@@ -387,7 +411,7 @@ def get_args():
 
         # inference 시에는 prediction 결과를 저장하는 곳이 output_dir 이 되므로 새로 지정해줌
         assert training_args.project_name, "project_name 을 arguments.py 에서 지정해주세요!"
-        training_args.output_dir = os.path.join('./outputs', training_args.project_name)
+        training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
 
         data_args.dataset_name = '../data/test_dataset/'
 
@@ -429,11 +453,23 @@ def get_models(training_args, model_args):
         # rust version이 비교적 속도가 빠릅니다.
         use_fast=True,
     )
-    model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=model_config,
-    )
+    if model_args.additional_model is None:
+        model = AutoModelForQuestionAnswering.from_pretrained(
+            model_args.model_name_or_path,
+            config=model_config,
+        )
+    else:
+        attached = model_args.additional_model.lower()
+        assert attached in ['lstm', 'bidaf'],\
+            "Available models are lstm, bidaf. (No matter letter case)"
+        print("******* AttachedLSTM *******")
+
+        if attached == 'lstm':
+            from model.LSTM.LSTM import ModelAttachedLSTM
+            model = ModelAttachedLSTM(model_config)
+        elif attached == 'bidaf':
+            from model.BiDAF.BiDAF import ModelAttachedBiDAF
+            model = ModelAttachedBiDAF(model_config)
 
     return tokenizer, model_config, model
 
@@ -488,6 +524,7 @@ def post_processing_function(examples, features, predictions, training_args):
         predictions=predictions,
         max_answer_length=training_args.max_answer_length,
         output_dir=training_args.output_dir,
+        prefix=training_args.output_dir.split('/')[3]
     )
     # Metric을 구할 수 있도록 Format을 맞춰줍니다.
     formatted_predictions = [

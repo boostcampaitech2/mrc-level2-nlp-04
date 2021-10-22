@@ -57,6 +57,18 @@ def main():
 
     wandb.join()
 
+    print(f"####### Saved at {training_args.output_dir} #######")
+    if training_args.with_inference:
+        sub, output, project, run = training_args.output_dir.split('/')
+        output = '/'.join([sub, output])
+        string = (
+            f"python inference.py --do_predict --project_name {project} \
+            --run_name {run}"
+            + (f" --additional_model {model_args.additional_model}"
+               if model_args.additional_model is not None else '')
+        )
+        os.system(string)
+
 
 def run_mrc(
         data_args: DataTrainingArguments,

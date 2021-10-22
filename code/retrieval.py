@@ -73,7 +73,7 @@ class SparseRetrieval:
             max_features=50000,
         )
 
-        self.p_embedding = None  # get_sparse_embedding()로 생성합니다
+        self.p_embedding = self.get_sparse_embedding()  # get_sparse_embedding()로 생성합니다
         self.indexer = None  # build_faiss()로 생성합니다.
 
     def get_sparse_embedding(self) -> NoReturn:
@@ -145,7 +145,8 @@ class SparseRetrieval:
             print("Faiss Indexer Saved.")
 
     def retrieve(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
+            self, query_or_dataset: Union[str, Dataset],
+            topk: Optional[int] = 1, # use_faiss: bool,
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -171,7 +172,9 @@ class SparseRetrieval:
         assert self.p_embedding is not None, "get_sparse_embedding() 메소드를 먼저 수행해줘야합니다."
 
         if isinstance(query_or_dataset, str):
-            doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
+            doc_scores, doc_indices = (
+                self.get_relevant_doc(query_or_dataset, k=topk)
+            )
             print("[Search query]\n", query_or_dataset, "\n")
 
             for i in range(topk):
@@ -210,7 +213,9 @@ class SparseRetrieval:
             cqas = pd.DataFrame(total)
             return cqas
 
-    def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
+    def get_relevant_doc(
+            self, query: str, k: Optional[int] = 1
+    ) -> Tuple[List, List]:
 
         """
         Arguments:
@@ -394,19 +399,19 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
-        "--dataset_name", metavar="./data/train_dataset", type=str, help=""
+        "--dataset_name", default="../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
         "--model_name_or_path",
-        metavar="bert-base-multilingual-cased",
+        default="klue/roberta-small",
         type=str,
         help="",
     )
-    parser.add_argument("--data_path", metavar="./data", type=str, help="")
+    parser.add_argument("--data_path", default="../data", type=str, help="")
     parser.add_argument(
-        "--context_path", metavar="wikipedia_documents", type=str, help=""
+        "--context_path", default="wikipedia_documents.json", type=str, help=""
     )
-    parser.add_argument("--use_faiss", metavar=False, type=bool, help="")
+    parser.add_argument("--use_faiss", default=False, type=bool, help="")
 
     args = parser.parse_args()
 
@@ -437,6 +442,7 @@ if __name__ == "__main__":
     query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
 
     if args.use_faiss:
+        retriever.build_faiss()
 
         # test single query
         with timer("single query by faiss"):
