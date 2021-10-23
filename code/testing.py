@@ -41,42 +41,21 @@ from transformers import(
             BertModel, BertPreTrainedModel,
             AdamW, get_linear_schedule_with_warmup,
             TrainingArguments,AutoTokenizer
-        )
+)
+from transformers.models.auto.configuration_auto import AutoConfig
+    
 
 from sys import getsizeof
 from retrieval import *
-
-class BertEncoder(BertPreTrainedModel):
-    def __init__(self, config):
-        super(BertEncoder, self).__init__(config)
-
-        self.bert = BertModel(config)
-        self.init_weights()
-      
-    def forward(
-            self,
-            input_ids, 
-            attention_mask=None,
-            token_type_ids=None
-        ): 
-
-        outputs = self.bert(
-            input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids
-        )
-        
-        pooled_output = outputs[1]
-        return pooled_output
 
 def main(args):
     Targs = TrainingArguments(
         output_dir="dense_retrieval",
         evaluation_strategy="epoch",
         learning_rate=3e-4,
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=2,
-        num_train_epochs=2,
+        per_device_train_batch_size=16,
+        per_device_eval_batch_size=16,
+        num_train_epochs=5,
         weight_decay=0.01
     )
     # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -97,8 +76,9 @@ def main(args):
                     "question": Value(dtype="string", id=None),
                 }
             )
-    p_encoder = BertEncoder.from_pretrained(p_encoder_dir).to(Targs.device)
-    q_encoder = BertEncoder.from_pretrained(q_encoder_dir).to(Targs.device)
+    model_config = AutoConfig.from_pretrained(model_checkpoint)
+    p_encoder = BertEncoder(name=p_encoder_dir, config=model_config).to(Targs.device) #.from_pretrained(p_encoder_dir).to(Targs.device)
+    q_encoder = BertEncoder(name=q_encoder_dir, config=model_config).to(Targs.device) #.from_pretrained(q_encoder_dir).to(Targs.device)
 
     retriever = DenseRetrieval(
         args = Targs,
@@ -117,9 +97,10 @@ def main(args):
         q_encoder.save_pretrained(args.q_encoder_dir)
     else:     
         retriever.get_dense_embedding()
-        df = retriever.retrieve(dataset["validation"], topk=3)
-        df_datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
-        print(df_datasets)
+        df, uni_set = retriever.retrieve(dataset["validation"], topk=10)
+        # df_datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+        print(uni_set)
+        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")

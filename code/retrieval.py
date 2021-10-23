@@ -16,6 +16,7 @@ from typing import List, Tuple, NoReturn, Any, Optional, Union
 from torch.utils.data import DataLoader, TensorDataset
 
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 import torch.nn.functional as F
 
@@ -32,6 +33,8 @@ from transformers import(
             AdamW, get_linear_schedule_with_warmup,
             TrainingArguments,
         )
+from transformers import AutoModel
+from transformers.utils.dummy_pt_objects import PreTrainedModel
 
 @contextmanager
 def timer(name):
@@ -534,23 +537,30 @@ class DenseRetrieval:
         )
         wiki_dataloader = DataLoader(
             wiki_dataset,
-            batch_size=batch_size
+            batch_size=batch_size,
+            drop_last = False
         )
         print(f'start')
         p_embedding_set = []
         with tqdm(wiki_dataloader, unit="batch") as tepoch:
             for batch in tepoch:
+                # print(f'{batch[0]}')
+                # print(f'{batch[0].shape}')
+                # exit()
                 p_inputs = {
-                    "input_ids": batch[0].view(batch_size, -1).to(self.args.device),
-                    "attention_mask": batch[1].view(batch_size, -1).to(self.args.device),
-                    "token_type_ids": batch[2].view(batch_size, -1).to(self.args.device)
+                    "input_ids": batch[0].to(self.args.device),
+                    "attention_mask": batch[1].to(self.args.device),
+                    "token_type_ids": batch[2].to(self.args.device)
                 }
                 p_outputs = self.p_encoder(**p_inputs)
                 # print(f'1. p_outpus : {p_outputs}')
-                p_outputs = p_outputs.view(batch_size, 1, -1)
+                # p_outputs = p_outputs.view(batch_size, 768)
+                # print(f'shape : {p_outputs.shape}')
+                # exit()
                 # print(f'2. p_outpus : {p_outputs}')
                 p_embedding_set.append(p_outputs.detach().cpu().numpy())
-        return np.array(p_embedding_set)
+        p_embedding_set = np.vstack(p_embedding_set)
+        return p_embedding_set
 
     def create_question_embedding(self, queries):
         batch_size = self.args.per_device_eval_batch_size
@@ -576,16 +586,16 @@ class DenseRetrieval:
         with tqdm(q_dataloader, unit="batch") as tepoch:
             for batch in tepoch:
                 q_inputs = {
-                    "input_ids": batch[0].view(batch_size, -1).to(self.args.device),
-                    "attention_mask": batch[1].view(batch_size, -1).to(self.args.device),
-                    "token_type_ids": batch[2].view(batch_size, -1).to(self.args.device)
+                    "input_ids": batch[0].to(self.args.device),
+                    "attention_mask": batch[1].to(self.args.device),
+                    "token_type_ids": batch[2].to(self.args.device)
                 }
                 q_outputs = self.q_encoder(**q_inputs)
                 # print(f'1. p_outpus : {p_outputs}')
-                q_outputs = q_outputs.view(batch_size, 1, -1)
+                # q_outputs = q_outputs.view(batch_size, 1, -1)
                 # print(f'2. p_outpus : {p_outputs}')
                 q_embedding_set.append(q_outputs.detach().cpu().numpy())
-        return np.array(q_embedding_set)
+        return np.vstack(q_embedding_set)
 
     def get_dense_embedding(self) -> NoReturn:
 
@@ -606,9 +616,8 @@ class DenseRetrieval:
             print("Embedding pickle load.")
         else:
             print("Build passage embedding")
-            p_embedding_np = self.create_passage_embedding()
-            self.p_embedding_set = np.reshape(p_embedding_np, (-1, p_embedding_np.shape[2]-1))
-            print(self.p_embedding_set.shape)
+            self.p_embedding_set = self.create_passage_embedding()
+            print(f'before p_embedding shape : {self.p_embedding_set.shape}')
             with open(emd_path, "wb") as file:
                 pickle.dump(self.p_embedding_set, file)
             print("Embedding pickle saved.")
@@ -773,34 +782,43 @@ class DenseRetrieval:
         q_embedding_set = np.reshape(q_embedding_set, (-1, 768))
         
         self.p_embedding_set = np.array(self.p_embedding_set)
-        self.p_embedding_set = np.reshape(self.p_embedding_set,(-1, 768))
+        # self.p_embedding_set = np.reshape(self.p_embedding_set,(-1, 768))
         print(f'q_embedding_set shape : {q_embedding_set.shape}')
         print(f'self.p_embedding_set shape : {self.p_embedding_set.shape}')
         # dot_prod_scores = torch.matmul(torch.Tensor(q_embedding_set), torch.transpose(torch.Tensor(self.p_embedding_set), 0, 1))
         
         result = q_embedding_set @ self.p_embedding_set.T
+        # result = np.matmul(q_embedding_set, self.p_embedding_set.T)
         # rank = np.argsort(dot_prod_scores, axis=1, descending=True).squeeze()
         # dot_prod_scores_to_list = dot_prod_scores.tolist()
         print(f'result.shape : {result.shape}')
         if not isinstance(result, np.ndarray):
             result = result.toarray()
         print(f'result.shape : {result.shape}')
-        count = 1
-        doc_scores = []
-        doc_indices = []
+        # count = 1
+        # doc_scores = []
+        # doc_indices = []
         print(f'result.shape[0] : {result.shape[0]}')
-        for i in range(result.shape[0]):
-            # print(f'result[{i}] : {result[i]}')
-            # print(f'result : {np.argsort(result[i])}')
-            sorted_result = np.argsort(result[i,:])[::-1]
-            # print(f'sorted_result : {sorted_result}')
-            # print(f'sorted_result len : {len(sorted_result)}')
+        # for i in range(result.shape[0]):
+        #     # print(f'result[{i}] : {result[i]}')
+        #     # print(f'result : {np.argsort(result[i])}')
+        #     sorted_result = np.argsort(result[i,:])[::-1]
+        #     # print(f'sorted_result : {sorted_result}')
+        #     # print(f'sorted_result len : {len(sorted_result)}')
 
-            doc_scores.append(result[i, :][sorted_result].tolist()[:k])
-            # print(sorted(sorted_result.tolist())[0:3])
-            # print(sorted(sorted_result.tolist())[-1])
-            # exit()
-            doc_indices.append(sorted_result.tolist()[:k])
+        #     doc_scores.append(result[i, :][sorted_result].tolist()[:k])
+        #     # print(sorted(sorted_result.tolist())[0:3])
+        #     # print(sorted(sorted_result.tolist())[-1])
+        #     # exit()
+        #     doc_indices.append(sorted_result.tolist()[:k])
+        # return doc_scores, doc_indices
+        doc_scores = np.partition(result, -k)[:, -k:][:, ::-1]
+        ind = np.argsort(doc_scores, axis=-1)[:, ::-1]
+        doc_scores = np.sort(doc_scores, axis=-1)[:, ::-1].tolist()
+        doc_indices = np.argpartition(result, -k)[:, -k:][:, ::-1]
+        r, c = ind.shape
+        ind = ind + np.tile(np.arange(r).reshape(-1, 1), (1, c)) * c
+        doc_indices = doc_indices.ravel()[ind].reshape(r, c).tolist()
         return doc_scores, doc_indices
 
     def retrieve(
@@ -840,7 +858,7 @@ class DenseRetrieval:
             return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
 
         elif isinstance(query_or_dataset, Dataset):
-
+            uni_set = set()
             # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
             total = []
             with timer("query exhaustive search"):
@@ -862,6 +880,8 @@ class DenseRetrieval:
                         [self.wiki_contexts[pid] for pid in doc_indices[idx]]
                     ),
                 }
+                uni_set.update(set([pid for pid in doc_indices[idx]]))
+                
                 if "context" in example.keys() and "answers" in example.keys():
                     # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
                     tmp["original_context"] = example["context"]
@@ -869,14 +889,15 @@ class DenseRetrieval:
                 total.append(tmp)
 
             cqas = pd.DataFrame(total)
-            return cqas
+            return cqas, uni_set
 
 class BertEncoder(BertPreTrainedModel):
-    def __init__(self, config):
+    def __init__(self, name,config):
         super(BertEncoder, self).__init__(config)
 
-        self.bert = BertModel(config)
-        self.init_weights()
+        # self.bert = BertModel(config)
+        self.bert = AutoModel.from_pretrained(name, config=config)
+        # self.init_weights()
       
     def forward(
             self,
