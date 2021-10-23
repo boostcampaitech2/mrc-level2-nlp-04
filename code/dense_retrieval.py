@@ -1,7 +1,8 @@
-import argparse
 import os
 import json
 import time
+from contextlib import contextmanager
+
 import faiss
 import pickle
 import numpy as np
@@ -10,17 +11,15 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 
 from tqdm.auto import tqdm
-from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
 
 from datasets import (
     Dataset,
     load_from_disk,
-    concatenate_datasets,
 )
-from transformers import TrainingArguments
+from transformers import AutoConfig, AutoTokenizer
 
-from utils_retrieval import get_encoders
+from model.Retrieval_Encoder.retrieval_encoder import RetrievalEncoder
 
 
 @contextmanager
@@ -31,10 +30,12 @@ def timer(name):
 
 
 class DenseRetrieval:
-    def __init__(self, training_args, args, tokenizer, p_encoder, q_encoder, num_neg=2,
+    def __init__(self, training_args, model_args, data_args, tokenizer, p_encoder, q_encoder, num_neg=2,
                  data_path='../data', context_path='wikipedia_documents.json'):
         self.training_args = training_args
-        self.args = args
+        self.model_args = model_args
+        self.data_args = data_args
+        # self.args = args
         self.tokenizer = tokenizer
         self.p_encoder = p_encoder
         self.q_encoder = q_encoder
@@ -76,9 +77,9 @@ class DenseRetrieval:
                 padding='max_length',
                 truncation=True,
                 return_tensors='pt',
-                return_token_type_ids=False if 'roberta' in self.args.model_name_or_path else True,
+                return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True,
             )
-            if 'roberta' in self.args.model_name_or_path:
+            if 'roberta' in self.model_args.retrieval_model_name_or_path:
                 passage_dataset = TensorDataset(
                     p_seqs['input_ids'],
                     p_seqs['attention_mask'],
@@ -101,7 +102,7 @@ class DenseRetrieval:
                     if torch.cuda.is_available():
                         batch = tuple(t.cuda() for t in batch)
 
-                    if 'roberta' in args.model_name_or_path:
+                    if 'roberta' in self.model_args.retrieval_model_name_or_path:
                         p_inputs = {'input_ids': batch[0],
                                     'attention_mask': batch[1]}
                     else:
@@ -120,26 +121,26 @@ class DenseRetrieval:
 
     def get_dataloader(self):
         '''train, validation, test의 dataloader와 dataset를 반환하는 함수'''
-        datasets = load_from_disk(self.args.dataset_name)
+        datasets = load_from_disk(self.data_args.dataset_name)
         print(datasets)
 
         train_dataset = datasets['train']
         eval_dataset = datasets['validation']
 
-        train_q_seqs = self.tokenizer(train_dataset['question'], padding='max_length', truncation=True,
-                                      return_tensors='pt',
-                                      return_token_type_ids=False if 'roberta' in self.args.model_name_or_path else True)
-        train_p_seqs = self.tokenizer(train_dataset['context'], padding='max_length', truncation=True,
-                                      return_tensors='pt',
-                                      return_token_type_ids=False if 'roberta' in self.args.model_name_or_path else True)
-        eval_q_seqs = self.tokenizer(eval_dataset['question'], padding='max_length', truncation=True,
-                                     return_tensors='pt',
-                                     return_token_type_ids=False if 'roberta' in self.args.model_name_or_path else True)
-        eval_p_seqs = self.tokenizer(eval_dataset['context'], padding='max_length', truncation=True,
-                                     return_tensors='pt',
-                                     return_token_type_ids=False if 'roberta' in self.args.model_name_or_path else True)
+        train_q_seqs = self.tokenizer(
+            train_dataset['question'], padding='max_length', truncation=True, return_tensors='pt',
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
+        train_p_seqs = self.tokenizer(
+            train_dataset['context'], padding='max_length', truncation=True, return_tensors='pt',
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
+        eval_q_seqs = self.tokenizer(
+            eval_dataset['question'], padding='max_length', truncation=True, return_tensors='pt',
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
+        eval_p_seqs = self.tokenizer(
+            eval_dataset['context'], padding='max_length', truncation=True, return_tensors='pt',
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
 
-        if 'roberta' in self.args.model_name_or_path:
+        if 'roberta' in self.model_args.retrieval_model_name_or_path:
             train_dataset = TensorDataset(train_p_seqs['input_ids'], train_p_seqs['attention_mask'],
                                           train_q_seqs['input_ids'], train_q_seqs['attention_mask'])
             eval_dataset = TensorDataset(eval_p_seqs['input_ids'], eval_p_seqs['attention_mask'],
@@ -278,7 +279,7 @@ class DenseRetrieval:
                 padding='max_length',
                 truncation=True,
                 return_tensors='pt',
-                return_token_type_ids=False if 'roberta' in self.args.model_name_or_path else True,
+                return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True,
             ).to(self.training_args.device)
             query_vec = self.q_encoder(**q_seq).detach().to('cpu').numpy()  # (num_query=1, emb_dim)
 
@@ -298,14 +299,15 @@ class DenseRetrieval:
 
         self.q_encoder.eval()
 
-        q_seqs = tokenizer(queries,
-                           padding='max_length',
-                           truncation=True,
-                           return_tensors='pt',
-                           return_token_type_ids=False if 'roberta' in self.args.model_name_or_path else True,
-                           ).to(self.training_args.device)
+        q_seqs = self.tokenizer(
+            queries,
+            padding='max_length',
+            truncation=True,
+            return_tensors='pt',
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True,
+        ).to(self.training_args.device)
 
-        if 'roberta' in self.args.model_name_or_path:
+        if 'roberta' in self.model_args.retrieval_model_name_or_path:
             question_dataset = TensorDataset(
                 q_seqs['input_ids'],
                 q_seqs['attention_mask'],
@@ -326,7 +328,7 @@ class DenseRetrieval:
                 if torch.cuda.is_available():
                     batch = tuple(t.cuda() for t in batch)
 
-                if 'roberta' in args.model_name_or_path:
+                if 'roberta' in self.model_args.retrieval_model_name_or_path:
                     q_inputs = {'input_ids': batch[0],
                                 'attention_mask': batch[1]}
                 else:
@@ -479,70 +481,15 @@ class DenseRetrieval:
         return D.tolist(), I.tolist()
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('--output_dir', type=str, default='../retrieval_output/')
-    parser.add_argument('--dataset_name', type=str, default='../data/train_dataset')
-    parser.add_argument('--model_name_or_path', type=str, default='klue/roberta-small')
-    parser.add_argument('--train_batch_size', type=int, default=16)
-    parser.add_argument('--eval_batch_size', type=int, default=16)
-    parser.add_argument('--use_faiss', type=bool, default=False)
-    parser.add_argument('--use_trained_model', type=bool, default=True)
-    parser.add_argument('--run_name', type=str, default='roberta-small')
-
-    args = parser.parse_args()
-
-    args.output_dir = os.path.join(args.output_dir, args.run_name)
-
-    # Test sparse
-    org_dataset = load_from_disk(args.dataset_name)
-    full_ds = concatenate_datasets(
-        [
-            org_dataset["train"].flatten_indices(),
-            org_dataset["validation"].flatten_indices(),
-        ]
-    )  # train dev 를 합친 4192 개 질문에 대해 모두 테스트
-    print("*" * 40, "query dataset", "*" * 40)
-    print(full_ds)
-
-    tokenizer, p_encoder, q_encoder = get_encoders(args)
-
-    if torch.cuda.is_available():
-        p_encoder.to('cuda')
-        q_encoder.to('cuda')
-
-    training_args = TrainingArguments(output_dir=args.output_dir,
-                                      per_device_train_batch_size=args.train_batch_size,
-                                      per_device_eval_batch_size=args.eval_batch_size,
-                                      )
-
-    retriever = DenseRetrieval(training_args, args, tokenizer, p_encoder, q_encoder)
-    retriever.get_dense_embedding()
-
-    query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
-
-    if args.use_faiss:
-
-        # test single query
-        with timer("single query by faiss"):
-            scores, indices = retriever.retrieve_faiss(query)
-
-        # test bulk
-        with timer("bulk query by exhaustive search"):
-            df = retriever.retrieve_faiss(full_ds)
-            df["correct"] = df["original_context"] == df["context"]
-
-            print("correct retrieval result by faiss", df["correct"].sum() / len(df))
-
+def get_encoders(training_args, model_args):
+    model_config = AutoConfig.from_pretrained(model_args.retrieval_model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_args.retrieval_model_name_or_path, use_fast=True)
+    if model_args.use_trained_model:
+        p_encoder_path = os.path.join(training_args.retrieval_output_dir, 'p_encoder')
+        q_encoder_path = os.path.join(training_args.retrieval_output_dir, 'q_encoder')
+        p_encoder = RetrievalEncoder(p_encoder_path, model_config)
+        q_encoder = RetrievalEncoder(q_encoder_path, model_config)
     else:
-        with timer("bulk query by exhaustive search"):
-            df = retriever.retrieve(full_ds)
-            df["correct"] = df["original_context"] == df["context"]
-            print(
-                "correct retrieval result by exhaustive search",
-                df["correct"].sum() / len(df),
-            )
-
-        with timer("single query by exhaustive search"):
-            scores, indices = retriever.retrieve(query)
+        p_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+        q_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+    return tokenizer, p_encoder, q_encoder

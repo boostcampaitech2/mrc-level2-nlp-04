@@ -2,6 +2,7 @@
 .idea/
 outputs/
 data/
+predict/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

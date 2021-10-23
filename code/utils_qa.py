@@ -40,7 +40,7 @@ from arguments import (
     DataTrainingArguments,
     TrainingArguments,
 )
-from utils_retrieval import run_sparse_retrieval
+from utils_retrieval import run_sparse_retrieval, run_dense_retrieval
 from data_processing import DataProcessor
 
 logger = logging.getLogger(__name__)
@@ -396,6 +396,12 @@ def get_args():
     training_args.output_dir = os.path.join(
         training_args.output_dir, training_args.project_name, training_args.run_name
     )
+
+    assert training_args.retrieval_folder_name is not None, "[Error] Retrieval folder name need"
+    training_args.retrieval_output_dir = os.path.join(
+        training_args.retrieval_output_dir, training_args.retrieval_folder_name
+    )
+
     if not training_args.do_predict:
         training_args.output_dir = increment_path(training_args.output_dir)
 
@@ -498,12 +504,19 @@ def get_data(training_args, model_args, data_args, tokenizer):
         return datasets, train_dataset, eval_dataset, data_collator
     else:
         # test data 에는 context 가 없으므로 retrieval 해서 추가해줌
-        if data_args.eval_retrieval:
+        if data_args.eval_retrieval == 'sparse':
             datasets = run_sparse_retrieval(
                 tokenizer.tokenize,
                 datasets,
                 training_args,
                 data_args,
+            )
+        elif data_args.eval_retrieval == 'dense':
+            datasets = run_dense_retrieval(
+                training_args,
+                model_args,
+                data_args,
+                datasets
             )
         # test data 폴더에 들어있는 데이터에서도 validation 으로 되어있음
         eval_dataset = datasets['validation']
