@@ -436,7 +436,7 @@ def set_seed_everything(seed):
     return None
 
 
-def get_models(training_args, model_args):
+def get_models( model_args):
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     model_config = AutoConfig.from_pretrained(
