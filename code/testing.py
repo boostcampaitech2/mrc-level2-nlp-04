@@ -53,9 +53,9 @@ def main(args):
         output_dir="dense_retrieval",
         evaluation_strategy="epoch",
         learning_rate=3e-4,
-        per_device_train_batch_size=16,
-        per_device_eval_batch_size=16,
-        num_train_epochs=5,
+        per_device_train_batch_size=8,
+        per_device_eval_batch_size=8,
+        num_train_epochs=3 ,
         weight_decay=0.01
     )
     # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -92,12 +92,16 @@ def main(args):
     )
 
     if args.is_train:
-        retriever.train()
-        p_encoder.save_pretrained(args.p_encoder_dir)
-        q_encoder.save_pretrained(args.q_encoder_dir)
+        # retriever.train()
+        retriever._train()
+        retriever.p_encoder.save_pretrained(args.p_encoder_dir)
+        retriever.q_encoder.save_pretrained(args.q_encoder_dir)
+        retriever.get_dense_embedding()
+        df, uni_set = retriever.retrieve(dataset["validation"], topk=1)
+        print(uni_set)
     else:     
         retriever.get_dense_embedding()
-        df, uni_set = retriever.retrieve(dataset["validation"], topk=10)
+        df, uni_set = retriever.retrieve(dataset["validation"], topk=1)
         # df_datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
         print(uni_set)
         
