@@ -1,7 +1,5 @@
-import argparse
 import logging
 import os.path
-import sys
 
 import torch
 import torch.nn.functional as F
@@ -11,7 +9,7 @@ from torch import nn
 from torch.cuda.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
-from transformers import AdamW, TrainingArguments
+from transformers import AdamW
 
 from dense_retrieval import DenseRetrieval
 from utils_retrieval import get_encoders
@@ -22,7 +20,7 @@ logger = logging.getLogger(__name__)
 webhook_url = "https://hooks.slack.com/services/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"
 
 
-@slack_sender(webhook_url=webhook_url, channel="#level2-nlp-04-knockknock")
+# @slack_sender(webhook_url=webhook_url, channel="#level2-nlp-04-knockknock")
 def main():
     # get arguments
     model_args, data_args, training_args = get_args()
@@ -53,10 +51,9 @@ def main():
     return {'best_acc': best_acc}
 
 
-def training_per_step(model_args, batch, p_encoder, q_encoder, criterion, scaler):
+def training_per_step(training_args, model_args, batch, p_encoder, q_encoder, criterion, scaler):
     with autocast():
         batch_loss, batch_acc = 0, 0
-
         if torch.cuda.is_available():
             batch = tuple(t.cuda() for t in batch)
 
@@ -80,7 +77,7 @@ def training_per_step(model_args, batch, p_encoder, q_encoder, criterion, scaler
         sim_scores = torch.matmul(q_outputs, torch.transpose(p_outputs, 0, 1))  # (batch_size, batch_size)
 
         # target : position of positive samples = diagonal element
-        targets = torch.arange(0, len(batch[0])).long()
+        targets = torch.arange(0, training_args.per_device_retrieval_train_batch_size).long()
         if torch.cuda.is_available():
             targets = targets.to('cuda')
 
@@ -93,10 +90,10 @@ def training_per_step(model_args, batch, p_encoder, q_encoder, criterion, scaler
         batch_loss += loss.cpu().item()
         batch_acc += torch.sum(preds.cpu() == targets.cpu())
 
-    return p_encoder, q_encoder, batch_loss, batch_acc
+    return batch_loss, batch_acc
 
 
-def evaluating_per_step(model_args, batch, p_encoder, q_encoder):
+def evaluating_per_step(training_args, model_args, batch, p_encoder, q_encoder):
     batch_acc = 0
 
     if torch.cuda.is_available():
@@ -124,12 +121,11 @@ def evaluating_per_step(model_args, batch, p_encoder, q_encoder):
     _, preds = torch.max(sim_scores, dim=1)
 
     # target : position of positive samples = diagonal element
-    targets = torch.arange(0, len(batch[0])).long()
-    targets = targets
+    targets = torch.arange(0, training_args.per_device_retrieval_eval_batch_size).long()
 
     batch_acc += torch.sum(preds.cpu() == targets)
 
-    return p_encoder, q_encoder, batch_acc
+    return batch_acc
 
 
 def train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, q_encoder):
@@ -176,10 +172,10 @@ def train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, 
 
         epoch_iterator = tqdm(train_dataloader, desc='train-Iteration')
         for step, batch in enumerate(epoch_iterator):
-            p_encoder, q_encoder, batch_loss, batch_acc = training_per_step(model_args, batch,
-                                                                            p_encoder, q_encoder, criterion, scaler)
-            running_loss += batch_loss / len(batch[0])
-            running_acc += batch_acc / len(batch[0])
+            batch_loss, batch_acc = training_per_step(training_args, model_args, batch,
+                                                      p_encoder, q_encoder, criterion, scaler)
+            running_loss += batch_loss / training_args.per_device_retrieval_train_batch_size
+            running_acc += batch_acc / training_args.per_device_retrieval_train_batch_size
             num_cnt += 1
 
             if (step + 1) % training_args.gradient_accumulation_steps == 0:
@@ -203,10 +199,9 @@ def train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, 
         running_acc, num_cnt = 0, 0
         for step, batch in enumerate(epoch_iterator):
             with torch.no_grad():
-                p_encoder, q_encoder, batch_acc = \
-                    evaluating_per_step(model_args, batch, p_encoder, q_encoder)
+                batch_acc = evaluating_per_step(training_args, model_args, batch, p_encoder, q_encoder)
 
-                running_acc += batch_acc / len(batch[0])
+                running_acc += batch_acc / training_args.per_device_retrieval_eval_batch_size
                 num_cnt += 1
 
         eval_epoch_acc = float((running_acc / num_cnt) * 100)
@@ -218,10 +213,6 @@ def train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, 
 
             p_save_path = os.path.join(training_args.retrieval_output_dir, 'p_encoder')
             q_save_path = os.path.join(training_args.retrieval_output_dir, 'q_encoder')
-            if not os.path.exists(p_save_path):
-                os.makedirs(p_save_path, exist_ok=True)
-            if not os.path.exists(q_save_path):
-                os.makedirs(q_save_path, exist_ok=True)
 
             p_encoder.save_pretrained(p_save_path)
             q_encoder.save_pretrained(q_save_path)

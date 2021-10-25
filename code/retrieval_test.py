@@ -13,7 +13,7 @@ if __name__ == "__main__":
     model_args, data_args, training_args = get_args()
 
     # Test sparse
-    org_dataset = load_from_disk(data_args.dataset_name)
+    org_dataset = load_from_disk('../data/train_dataset')
     full_ds = concatenate_datasets(
         [
             org_dataset["train"].flatten_indices(),
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     os.environ['WANDB_SILENT'] = "true"
 
     wandb.init(project=training_args.project_name,
-               name=training_args.run_name,
+               name=training_args.retrieval_run_name,
                entity='ssp',
                reinit=True,
                )

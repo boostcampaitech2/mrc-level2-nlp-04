@@ -8,7 +8,7 @@ import pickle
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import TensorDataset, DataLoader, RandomSampler
 
 from tqdm.auto import tqdm
 from typing import List, Tuple, NoReturn, Any, Optional, Union
@@ -19,7 +19,8 @@ from datasets import (
 )
 from transformers import AutoConfig, AutoTokenizer
 
-from model.Retrieval_Encoder.retrieval_encoder import RetrievalEncoder
+from model.Retrieval_Encoder.retrieval_encoder import RetrievalBERTEncoder, RetrievalRoBERTaEncoder, \
+    RetrievalELECTRAEncoder
 
 
 @contextmanager
@@ -64,7 +65,7 @@ class DenseRetrieval:
 
         # Pickle을 저장합니다.
         pickle_name = f"dense_embedding.bin"
-        emd_path = os.path.join(self.data_path, pickle_name)
+        emd_path = os.path.join(self.data_path, self.training_args.retrieval_run_name + '_' + pickle_name)
 
         if os.path.isfile(emd_path):
             with open(emd_path, "rb") as file:
@@ -91,7 +92,7 @@ class DenseRetrieval:
                     p_seqs['token_type_ids'],
                 )
 
-            passage_dataloader = DataLoader(passage_dataset, batch_size=self.training_args.per_device_train_batch_size)
+            passage_dataloader = DataLoader(passage_dataset, batch_size=self.training_args.per_device_eval_batch_size)
 
             self.p_encoder.eval()
 
@@ -153,9 +154,12 @@ class DenseRetrieval:
                 eval_p_seqs['input_ids'], eval_p_seqs['attention_mask'], eval_p_seqs['token_type_ids'],
                 eval_q_seqs['input_ids'], eval_q_seqs['attention_mask'], eval_q_seqs['token_type_ids'])
 
-        train_dataloader = DataLoader(train_dataset, shuffle=True,
+        train_sampler = RandomSampler(train_dataset)
+        train_dataloader = DataLoader(train_dataset, sampler=train_sampler,
                                       batch_size=self.training_args.per_device_retrieval_train_batch_size)
-        eval_dataloader = DataLoader(eval_dataset, batch_size=self.training_args.per_device_retrieval_eval_batch_size)
+        eval_sampler = RandomSampler(eval_dataset)
+        eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler,
+                                     batch_size=self.training_args.per_device_retrieval_eval_batch_size)
 
         return train_dataloader, eval_dataloader
 
@@ -482,14 +486,29 @@ class DenseRetrieval:
 
 
 def get_encoders(training_args, model_args):
-    model_config = AutoConfig.from_pretrained(model_args.retrieval_model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(model_args.retrieval_model_name_or_path, use_fast=True)
     if model_args.use_trained_model:
         p_encoder_path = os.path.join(training_args.retrieval_output_dir, 'p_encoder')
         q_encoder_path = os.path.join(training_args.retrieval_output_dir, 'q_encoder')
-        p_encoder = RetrievalEncoder(p_encoder_path, model_config)
-        q_encoder = RetrievalEncoder(q_encoder_path, model_config)
+        if 'electra' in model_args.retrieval_model_name_or_path:
+            p_encoder = RetrievalELECTRAEncoder.from_pretrained(p_encoder_path)
+            q_encoder = RetrievalELECTRAEncoder.from_pretrained(q_encoder_path)
+        elif 'roberta' in model_args.retrieval_model_name_or_path:
+            p_encoder = RetrievalRoBERTaEncoder.from_pretrained(p_encoder_path)
+            q_encoder = RetrievalRoBERTaEncoder.from_pretrained(q_encoder_path)
+        elif 'bert' in model_args.retrieval_model_name_or_path:
+            p_encoder = RetrievalBERTEncoder.from_pretrained(p_encoder_path)
+            q_encoder = RetrievalBERTEncoder.from_pretrained(q_encoder_path)
+
     else:
-        p_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
-        q_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+        if 'electra' in model_args.retrieval_model_name_or_path:
+            p_encoder = RetrievalELECTRAEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
+            q_encoder = RetrievalELECTRAEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
+        elif 'roberta' in model_args.retrieval_model_name_or_path:
+            p_encoder = RetrievalRoBERTaEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
+            q_encoder = RetrievalRoBERTaEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
+        elif 'bert' in model_args.retrieval_model_name_or_path:
+            p_encoder = RetrievalBERTEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
+            q_encoder = RetrievalBERTEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
+
     return tokenizer, p_encoder, q_encoder
