@@ -11,7 +11,7 @@ class TrainingArguments(OriginTrainingArguments):
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
     retrieval_output_dir: str = field(
-        default='../retrieval_output_test',
+        default='../retrieval_output',
         metadata={"help": "The output directory where the retrieval model will be written."},
     )
     with_inference: str = field(
