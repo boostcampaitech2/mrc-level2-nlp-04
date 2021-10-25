@@ -7,12 +7,16 @@ from transformers import TrainingArguments as OriginTrainingArguments, IntervalS
 @dataclass
 class TrainingArguments(OriginTrainingArguments):
     output_dir: str = field(
-        default='./models',
+        default='../output',
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
+    )
+    with_inference: str = field(
+        default=True,
+        metadata={"help": "do train then inference"},
     )
     project_name: Optional[str] = field(
         # PR 하실때는 None 으로 바꿔서 올려주세요! 얘의 목적은 wandb project name 설정을 위함입니다.
-        default=None,
+        default='elasticsearch',
         metadata={"help": "wandb project name"},
     )
     run_name: Optional[str] = field(
@@ -86,7 +90,28 @@ class ModelArguments:
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
     )
-
+    retrieval_type: Optional[str] = field(
+        default = "elastic sentence_trainformer",
+        metadata = {
+            "help" : "elastic or not and sentence_transformer or not"
+        },
+    )
+    retrieval_elastic_index: Optional[str] = field(
+        default="wiki-index-split-400",
+        metadata={"help": "Elastic search index name[wiki-index, wiki-index-split-400, wiki-index-split-800(best), wiki-index-split-1000]"
+        },
+    )
+    retrieval_elastic_num: Optional[int] = field(
+        default=35,
+        metadata={"help": "The number of context or passage from Elastic search"
+        },
+    )
+    additional_model: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Attach additional layer to end of model"
+        },
+    )
 
 @dataclass
 class DataTrainingArguments:
@@ -142,7 +167,7 @@ class DataTrainingArguments:
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
     top_k_retrieval: int = field(
-        default=1,
+        default=30,
         metadata={
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
