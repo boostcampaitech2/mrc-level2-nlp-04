@@ -10,18 +10,26 @@ class TrainingArguments(OriginTrainingArguments):
         default='../output',
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
+    retrieval_output_dir: str = field(
+        default='../retrieval_output',
+        metadata={"help": "The output directory where the retrieval model will be written."},
+    )
     with_inference: str = field(
         default=True,
         metadata={"help": "do train then inference"},
     )
     project_name: str = field(
         # PR 하실때는 None 으로 바꿔서 올려주세요! 얘의 목적은 wandb project name 설정을 위함입니다.
-        default=None,
+        default='mrc_testing',
         metadata={"help": "wandb project name"},
     )
     run_name: Optional[str] = field(
         default='exp',
         metadata={"help": "wandb run name"},
+    )
+    retrieval_folder_name: Optional[str] = field(
+        default='roberta-small',
+        metadata={"help": "retrieval encoder model folder name"},
     )
     evaluation_strategy: IntervalStrategy = field(
         default='steps',
@@ -96,6 +104,18 @@ class ModelArguments:
             "help": "Attach additional layer to end of model"
         },
     )
+    retrieval_model_name_or_path: str = field(
+        default="klue/roberta-small",
+        metadata={
+            "help": "Path to pretrained model or model identifier from huggingface.co/models"
+        },
+    )
+    use_trained_model: bool = field(
+        default=True,
+        metadata={
+            "help": "whether using fine-tuned retrieval model"
+        },
+    )
 
 
 @dataclass
@@ -144,9 +164,10 @@ class DataTrainingArguments:
                     "and end predictions are not conditioned on one another."
         },
     )
-    eval_retrieval: bool = field(
-        default=True,
-        metadata={"help": "Whether to run passage retrieval using sparse embedding."},
+    eval_retrieval: str = field(
+        default='dense',
+        metadata={"help": "Choose run passage retrieval using sparse or dense or both embedding"
+                          "ex. sparse, dense, both(예정 BM25 + dense)"},
     )
     num_clusters: int = field(
         default=64, metadata={"help": "Define how many clusters to use for faiss."}

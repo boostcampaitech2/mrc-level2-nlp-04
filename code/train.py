@@ -28,7 +28,7 @@ def main():
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed_everything(training_args.seed)
 
-    tokenizer, model_config, model = get_models(training_args, model_args)
+    tokenizer, model_config, model = get_models(model_args)
 
     # logging 설정
     logging.basicConfig(

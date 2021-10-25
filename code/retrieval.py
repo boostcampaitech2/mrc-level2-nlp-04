@@ -10,7 +10,6 @@ from tqdm.auto import tqdm
 from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
 
-
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from datasets import (
@@ -29,10 +28,10 @@ def timer(name):
 
 class SparseRetrieval:
     def __init__(
-        self,
-        tokenize_fn,
-        data_path: Optional[str] = "../data/",
-        context_path: Optional[str] = "wikipedia_documents.json",
+            self,
+            tokenize_fn,
+            data_path: Optional[str] = "../data/",
+            context_path: Optional[str] = "wikipedia_documents.json",
     ) -> NoReturn:
 
         """
@@ -146,7 +145,7 @@ class SparseRetrieval:
 
     def retrieve(
             self, query_or_dataset: Union[str, Dataset],
-            topk: Optional[int] = 1, # use_faiss: bool,
+            topk: Optional[int] = 1,  # use_faiss: bool,
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -178,7 +177,7 @@ class SparseRetrieval:
             print("[Search query]\n", query_or_dataset, "\n")
 
             for i in range(topk):
-                print(f"Top-{i+1} passage with score {doc_scores[i]:4f}")
+                print(f"Top-{i + 1} passage with score {doc_scores[i]:4f}")
                 print(self.contexts[doc_indices[i]])
 
             return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
@@ -192,7 +191,7 @@ class SparseRetrieval:
                     query_or_dataset["question"], k=topk
                 )
             for idx, example in enumerate(
-                tqdm(query_or_dataset, desc="Sparse retrieval: ")
+                    tqdm(query_or_dataset, desc="Sparse retrieval: ")
             ):
                 tmp = {
                     # Query와 해당 id를 반환합니다.
@@ -230,7 +229,7 @@ class SparseRetrieval:
         with timer("transform"):
             query_vec = self.tfidfv.transform([query])
         assert (
-            np.sum(query_vec) != 0
+                np.sum(query_vec) != 0
         ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
 
         with timer("query ex search"):
@@ -244,7 +243,7 @@ class SparseRetrieval:
         return doc_score, doc_indices
 
     def get_relevant_doc_bulk(
-        self, queries: List, k: Optional[int] = 1
+            self, queries: List, k: Optional[int] = 1
     ) -> Tuple[List, List]:
 
         """
@@ -259,22 +258,31 @@ class SparseRetrieval:
 
         query_vec = self.tfidfv.transform(queries)
         assert (
-            np.sum(query_vec) != 0
+                np.sum(query_vec) != 0
         ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
 
         result = query_vec * self.p_embedding.T
         if not isinstance(result, np.ndarray):
             result = result.toarray()
-        doc_scores = []
-        doc_indices = []
-        for i in range(result.shape[0]):
-            sorted_result = np.argsort(result[i, :])[::-1]
-            doc_scores.append(result[i, :][sorted_result].tolist()[:k])
-            doc_indices.append(sorted_result.tolist()[:k])
+        # doc_scores = []
+        # doc_indices = []
+        # for i in range(result.shape[0]):
+        #     sorted_result = np.argsort(result[i, :])[::-1]
+        #     doc_scores.append(result[i, :][sorted_result].tolist()[:k])
+        #     doc_indices.append(sorted_result.tolist()[:k])
+
+        # 진명훈님 공유해주신 코드 적용
+        doc_scores = np.partition(result, -k)[:, -k:][:, ::-1]
+        ind = np.argsort(doc_scores, axis=-1)[:, ::-1]
+        doc_scores = np.sort(doc_scores, axis=-1)[:, ::-1].tolist()
+        doc_indices = np.argpartition(result, -k)[:, -k:][:, ::-1]
+        r, c = ind.shape
+        ind = ind + np.tile(np.arange(r).reshape(-1, 1), (1, c)) * c
+        doc_indices = doc_indices.ravel()[ind].reshape(r, c).tolist()
         return doc_scores, doc_indices
 
     def retrieve_faiss(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
+            self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -323,7 +331,7 @@ class SparseRetrieval:
                     queries, k=topk
                 )
             for idx, example in enumerate(
-                tqdm(query_or_dataset, desc="Sparse retrieval: ")
+                    tqdm(query_or_dataset, desc="Sparse retrieval: ")
             ):
                 tmp = {
                     # Query와 해당 id를 반환합니다.
@@ -344,7 +352,7 @@ class SparseRetrieval:
             return pd.DataFrame(total)
 
     def get_relevant_doc_faiss(
-        self, query: str, k: Optional[int] = 1
+            self, query: str, k: Optional[int] = 1
     ) -> Tuple[List, List]:
 
         """
@@ -359,7 +367,7 @@ class SparseRetrieval:
 
         query_vec = self.tfidfv.transform([query])
         assert (
-            np.sum(query_vec) != 0
+                np.sum(query_vec) != 0
         ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
 
         q_emb = query_vec.toarray().astype(np.float32)
@@ -369,7 +377,7 @@ class SparseRetrieval:
         return D.tolist()[0], I.tolist()[0]
 
     def get_relevant_doc_bulk_faiss(
-        self, queries: List, k: Optional[int] = 1
+            self, queries: List, k: Optional[int] = 1
     ) -> Tuple[List, List]:
 
         """
@@ -384,7 +392,7 @@ class SparseRetrieval:
 
         query_vecs = self.tfidfv.transform(queries)
         assert (
-            np.sum(query_vecs) != 0
+                np.sum(query_vecs) != 0
         ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
 
         q_embs = query_vecs.toarray().astype(np.float32)

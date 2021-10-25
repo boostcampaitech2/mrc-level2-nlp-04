@@ -29,7 +29,7 @@ def main():
     set_seed_everything(training_args.seed)
 
     # get_tokenizer, model
-    tokenizer, model_config, model = get_models(training_args, model_args)
+    tokenizer, model_config, model = get_models(model_args)
 
     # logging 설정
     logging.basicConfig(
@@ -78,16 +78,6 @@ def run_mrc(
 
     logger.info("*** Evaluate ***")
 
-    #### eval dataset & eval example - predictions.json 생성됨
-    if training_args.do_predict:
-        predictions = trainer.predict(
-            test_dataset=eval_dataset, test_examples=datasets["validation"]
-        )
-
-        # predictions.json 은 postprocess_qa_predictions() 호출시 이미 저장됩니다.
-        print(
-            "No metric can be presented because there is no correct answer given. Job done!"
-        )
 
 if __name__ == "__main__":
     main()

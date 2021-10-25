@@ -1,0 +1,5 @@
+[default]
+entity = ssp
+project = dpr_testing
+base_url = https://api.wandb.ai
+
