@@ -19,16 +19,16 @@ class TrainingArguments(OriginTrainingArguments):
         metadata={"help": "do train then inference"},
     )
     project_name: str = field(
-        # PR 하실때는 None 으로 바꿔서 올려주세요! 얘의 목적은 wandb project name 설정을 위함입니다.
-        default='dense_retrieval_top-k_accuracy_test',
+        # TODO PR 하실때는 None 으로 바꿔서 올려주세요! 얘의 목적은 wandb project name 설정을 위함입니다.
+        default=None,
         metadata={"help": "wandb project name"},
     )
     run_name: Optional[str] = field(
         default='exp',
         metadata={"help": "wandb run name"},
     )
-    retrieval_folder_name: Optional[str] = field(
-        default='roberta-small',
+    retrieval_run_name: Optional[str] = field(
+        default='exp',
         metadata={"help": "retrieval encoder model folder name"},
     )
     evaluation_strategy: IntervalStrategy = field(
@@ -41,8 +41,15 @@ class TrainingArguments(OriginTrainingArguments):
     per_device_eval_batch_size: int = field(
         default=128, metadata={"help": "Batch size per GPU/TPU core/CPU for evaluation."}
     )
+    per_device_retrieval_train_batch_size: int = field(
+        default=16, metadata={"help": "Batch size per GPU/TPU core/CPU for retrieval_evaluation."}
+    )
+    per_device_retrieval_eval_batch_size: int = field(
+        default=16, metadata={"help": "Batch size per GPU/TPU core/CPU for retrieval_evaluation."}
+    )
     num_train_epochs: float = field(default=10.0, metadata={"help": "Total number of training epochs to perform."})
     learning_rate: float = field(default=5e-5, metadata={"help": "The initial learning rate for AdamW."})
+    retrieval_learning_rate: float = field(default=1e-5, metadata={"help": "The initial learning rate for AdamW."})
     weight_decay: float = field(default=0.0, metadata={"help": "Weight decay for AdamW if we apply some."})
     adam_epsilon: float = field(default=1e-8, metadata={"help": "Epsilon for AdamW optimizer."})
     warmup_ratio: float = field(

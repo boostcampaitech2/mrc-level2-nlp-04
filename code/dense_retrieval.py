@@ -154,8 +154,8 @@ class DenseRetrieval:
                 eval_q_seqs['input_ids'], eval_q_seqs['attention_mask'], eval_q_seqs['token_type_ids'])
 
         train_dataloader = DataLoader(train_dataset, shuffle=True,
-                                      batch_size=self.training_args.per_device_train_batch_size)
-        eval_dataloader = DataLoader(eval_dataset, batch_size=self.training_args.per_device_eval_batch_size)
+                                      batch_size=self.training_args.per_device_retrieval_train_batch_size)
+        eval_dataloader = DataLoader(eval_dataset, batch_size=self.training_args.per_device_retrieval_eval_batch_size)
 
         return train_dataloader, eval_dataloader
 

@@ -15,7 +15,7 @@ from transformers import AdamW, TrainingArguments
 
 from dense_retrieval import DenseRetrieval
 from utils_retrieval import get_encoders
-from utils_qa import set_seed_everything
+from utils_qa import set_seed_everything, get_args
 
 logger = logging.getLogger(__name__)
 
@@ -23,46 +23,44 @@ webhook_url = "https://hooks.slack.com/services/T027SHH7RT3/B02JRB9KHLZ/zth9MZYd
 
 
 @slack_sender(webhook_url=webhook_url, channel="#level2-nlp-04-knockknock")
-def main(args):
+def main():
+    # get arguments
+    model_args, data_args, training_args = get_args()
+
     # 모델을 초기화하기 전에 난수를 고정합니다.
-    set_seed_everything(args.seed)
+    set_seed_everything(training_args.seed)
 
     # get_tokenizer, model
-    tokenizer, p_encoder, q_encoder = get_encoders(args)
+    tokenizer, p_encoder, q_encoder = get_encoders(training_args, model_args)
     if torch.cuda.is_available():
         p_encoder.to('cuda')
         q_encoder.to('cuda')
-
-    training_args = TrainingArguments(output_dir=args.output_dir,
-                                      evaluation_strategy='epoch',
-                                      learning_rate=args.learning_rate,
-                                      per_device_train_batch_size=args.train_batch_size,
-                                      per_device_eval_batch_size=args.eval_batch_size,
-                                      gradient_accumulation_steps=args.gradient_accumulation_steps,
-                                      num_train_epochs=args.epoch,
-                                      weight_decay=0.01)
 
     # set wandb
     os.environ['WANDB_LOG_MODEL'] = 'true'
     os.environ['WANDB_WATCH'] = 'all'
     os.environ['WANDB_SILENT'] = 'true'
-    wandb.init(project=args.project_name, entity='ssp', name=args.run_name, reinit=True)
+    wandb.init(project=training_args.project_name,
+               entity='ssp',
+               name=training_args.retrieval_run_name,
+               reinit=True,
+               )
 
-    best_acc = train_retrieval(training_args, args, tokenizer, p_encoder, q_encoder)
+    best_acc = train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, q_encoder)
 
     wandb.join()
 
     return {'best_acc': best_acc}
 
 
-def training_per_step(training_args, args, batch, p_encoder, q_encoder, criterion, scaler):
+def training_per_step(model_args, batch, p_encoder, q_encoder, criterion, scaler):
     with autocast():
         batch_loss, batch_acc = 0, 0
 
         if torch.cuda.is_available():
             batch = tuple(t.cuda() for t in batch)
 
-        if 'roberta' in args.model_name_or_path:
+        if 'roberta' in model_args.retrieval_model_name_or_path:
             p_inputs = {'input_ids': batch[0],
                         'attention_mask': batch[1]}
             q_inputs = {'input_ids': batch[2],
@@ -82,7 +80,7 @@ def training_per_step(training_args, args, batch, p_encoder, q_encoder, criterio
         sim_scores = torch.matmul(q_outputs, torch.transpose(p_outputs, 0, 1))  # (batch_size, batch_size)
 
         # target : position of positive samples = diagonal element
-        targets = torch.arange(0, training_args.per_device_train_batch_size).long()
+        targets = torch.arange(0, len(batch[0])).long()
         if torch.cuda.is_available():
             targets = targets.to('cuda')
 
@@ -98,13 +96,13 @@ def training_per_step(training_args, args, batch, p_encoder, q_encoder, criterio
     return p_encoder, q_encoder, batch_loss, batch_acc
 
 
-def evaluating_per_step(training_args, args, batch, p_encoder, q_encoder):
+def evaluating_per_step(model_args, batch, p_encoder, q_encoder):
     batch_acc = 0
 
     if torch.cuda.is_available():
         batch = tuple(t.cuda() for t in batch)
 
-    if 'roberta' in args.model_name_or_path:
+    if 'roberta' in model_args.retrieval_model_name_or_path:
         p_inputs = {'input_ids': batch[0],
                     'attention_mask': batch[1]}
         q_inputs = {'input_ids': batch[2],
@@ -126,7 +124,7 @@ def evaluating_per_step(training_args, args, batch, p_encoder, q_encoder):
     _, preds = torch.max(sim_scores, dim=1)
 
     # target : position of positive samples = diagonal element
-    targets = torch.arange(0, training_args.per_device_eval_batch_size).long()
+    targets = torch.arange(0, len(batch[0])).long()
     targets = targets
 
     batch_acc += torch.sum(preds.cpu() == targets)
@@ -134,8 +132,8 @@ def evaluating_per_step(training_args, args, batch, p_encoder, q_encoder):
     return p_encoder, q_encoder, batch_acc
 
 
-def train_retrieval(training_args, args, tokenizer, p_encoder, q_encoder):
-    dense_retrieval = DenseRetrieval(training_args, args, tokenizer, p_encoder, q_encoder)
+def train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, q_encoder):
+    dense_retrieval = DenseRetrieval(training_args, model_args, data_args, tokenizer, p_encoder, q_encoder)
 
     train_dataloader, eval_dataloader = dense_retrieval.get_dataloader()
 
@@ -153,7 +151,7 @@ def train_retrieval(training_args, args, tokenizer, p_encoder, q_encoder):
     ]
     optimizer = AdamW(
         optimizer_grouped_parameters,
-        lr=training_args.learning_rate,
+        lr=training_args.retrieval_learning_rate,
         eps=training_args.adam_epsilon
     )
     scaler = GradScaler()
@@ -178,10 +176,10 @@ def train_retrieval(training_args, args, tokenizer, p_encoder, q_encoder):
 
         epoch_iterator = tqdm(train_dataloader, desc='train-Iteration')
         for step, batch in enumerate(epoch_iterator):
-            p_encoder, q_encoder, batch_loss, batch_acc = training_per_step(training_args, args, batch,
+            p_encoder, q_encoder, batch_loss, batch_acc = training_per_step(model_args, batch,
                                                                             p_encoder, q_encoder, criterion, scaler)
-            running_loss += batch_loss / training_args.per_device_train_batch_size
-            running_acc += batch_acc / training_args.per_device_train_batch_size
+            running_loss += batch_loss / len(batch[0])
+            running_acc += batch_acc / len(batch[0])
             num_cnt += 1
 
             if (step + 1) % training_args.gradient_accumulation_steps == 0:
@@ -206,9 +204,9 @@ def train_retrieval(training_args, args, tokenizer, p_encoder, q_encoder):
         for step, batch in enumerate(epoch_iterator):
             with torch.no_grad():
                 p_encoder, q_encoder, batch_acc = \
-                    evaluating_per_step(training_args, args, batch, p_encoder, q_encoder)
+                    evaluating_per_step(model_args, batch, p_encoder, q_encoder)
 
-                running_acc += batch_acc / training_args.per_device_eval_batch_size
+                running_acc += batch_acc / len(batch[0])
                 num_cnt += 1
 
         eval_epoch_acc = float((running_acc / num_cnt) * 100)
@@ -218,8 +216,8 @@ def train_retrieval(training_args, args, tokenizer, p_encoder, q_encoder):
             best_epoch = epoch
             best_acc = eval_epoch_acc
 
-            p_save_path = os.path.join(training_args.output_dir, 'p_encoder')
-            q_save_path = os.path.join(training_args.output_dir, 'q_encoder')
+            p_save_path = os.path.join(training_args.retrieval_output_dir, 'p_encoder')
+            q_save_path = os.path.join(training_args.retrieval_output_dir, 'q_encoder')
             if not os.path.exists(p_save_path):
                 os.makedirs(p_save_path, exist_ok=True)
             if not os.path.exists(q_save_path):
@@ -240,22 +238,4 @@ def train_retrieval(training_args, args, tokenizer, p_encoder, q_encoder):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('--output_dir', type=str, default='../retrieval_output/')
-    parser.add_argument('--dataset_name', type=str, default='../data/train_dataset')
-    parser.add_argument('--model_name_or_path', type=str, default='klue/roberta-small')
-    parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--epoch', type=int, default=10)
-    parser.add_argument('--learning_rate', type=float, default=1e-5)
-    parser.add_argument('--train_batch_size', type=int, default=16)
-    parser.add_argument('--eval_batch_size', type=int, default=16)
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=1)
-    parser.add_argument('--run_name', type=str, default='roberta-small')
-    parser.add_argument('--project_name', type=str, default=None)
-
-    args = parser.parse_args()
-
-    args.output_dir = os.path.join(args.output_dir, args.run_name)
-
-    main(args)
+    main()

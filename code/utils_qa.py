@@ -397,9 +397,9 @@ def get_args():
         training_args.output_dir, training_args.project_name, training_args.run_name
     )
 
-    assert training_args.retrieval_folder_name is not None, "[Error] Retrieval folder name need"
+    assert training_args.retrieval_run_name is not None, "[Error] Retrieval run name need"
     training_args.retrieval_output_dir = os.path.join(
-        training_args.retrieval_output_dir, training_args.retrieval_folder_name
+        training_args.retrieval_output_dir, training_args.retrieval_run_name
     )
 
     if not training_args.do_predict:
@@ -423,6 +423,9 @@ def get_args():
 
     print(training_args)
     print(f"model is from {model_args.model_name_or_path}")
+    print(f"retrieval model is from {model_args.retrieval_model_name_or_path}")
+    print(f"output_dir is from {training_args.output_dir}")
+    print(f"retrieval_output_dir is from {training_args.retrieval_output_dir}")
     print(f"data is from {data_args.dataset_name}")
 
     return model_args, data_args, training_args
