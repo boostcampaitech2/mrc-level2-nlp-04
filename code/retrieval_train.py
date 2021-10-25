@@ -214,8 +214,8 @@ def train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, 
             p_save_path = os.path.join(training_args.retrieval_output_dir, 'p_encoder')
             q_save_path = os.path.join(training_args.retrieval_output_dir, 'q_encoder')
 
-            p_encoder.save_pretrained(p_save_path)
-            q_encoder.save_pretrained(q_save_path)
+            p_encoder.encoder.save_pretrained(p_save_path)
+            q_encoder.encoder.save_pretrained(q_save_path)
             print(f'\t===> best model saved - {best_epoch} / Accuracy: {best_acc:.2f}')
 
         wandb.log({

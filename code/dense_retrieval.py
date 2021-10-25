@@ -20,7 +20,7 @@ from datasets import (
 from transformers import AutoConfig, AutoTokenizer
 
 from model.Retrieval_Encoder.retrieval_encoder import RetrievalBERTEncoder, RetrievalRoBERTaEncoder, \
-    RetrievalELECTRAEncoder
+    RetrievalELECTRAEncoder, RetrievalEncoder
 
 
 @contextmanager
@@ -486,29 +486,14 @@ class DenseRetrieval:
 
 
 def get_encoders(training_args, model_args):
+    model_config = AutoConfig.from_pretrained(model_args.retrieval_model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(model_args.retrieval_model_name_or_path, use_fast=True)
     if model_args.use_trained_model:
         p_encoder_path = os.path.join(training_args.retrieval_output_dir, 'p_encoder')
         q_encoder_path = os.path.join(training_args.retrieval_output_dir, 'q_encoder')
-        if 'electra' in model_args.retrieval_model_name_or_path:
-            p_encoder = RetrievalELECTRAEncoder.from_pretrained(p_encoder_path)
-            q_encoder = RetrievalELECTRAEncoder.from_pretrained(q_encoder_path)
-        elif 'roberta' in model_args.retrieval_model_name_or_path:
-            p_encoder = RetrievalRoBERTaEncoder.from_pretrained(p_encoder_path)
-            q_encoder = RetrievalRoBERTaEncoder.from_pretrained(q_encoder_path)
-        elif 'bert' in model_args.retrieval_model_name_or_path:
-            p_encoder = RetrievalBERTEncoder.from_pretrained(p_encoder_path)
-            q_encoder = RetrievalBERTEncoder.from_pretrained(q_encoder_path)
-
+        p_encoder = RetrievalEncoder(p_encoder_path, model_config)
+        q_encoder = RetrievalEncoder(q_encoder_path, model_config)
     else:
-        if 'electra' in model_args.retrieval_model_name_or_path:
-            p_encoder = RetrievalELECTRAEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
-            q_encoder = RetrievalELECTRAEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
-        elif 'roberta' in model_args.retrieval_model_name_or_path:
-            p_encoder = RetrievalRoBERTaEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
-            q_encoder = RetrievalRoBERTaEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
-        elif 'bert' in model_args.retrieval_model_name_or_path:
-            p_encoder = RetrievalBERTEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
-            q_encoder = RetrievalBERTEncoder.from_pretrained(model_args.retrieval_model_name_or_path)
-
+        p_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+        q_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
     return tokenizer, p_encoder, q_encoder
