@@ -19,8 +19,7 @@ from datasets import (
 )
 from transformers import AutoConfig, AutoTokenizer
 
-from model.Retrieval_Encoder.retrieval_encoder import RetrievalBERTEncoder, RetrievalRoBERTaEncoder, \
-    RetrievalELECTRAEncoder, RetrievalEncoder
+from model.Retrieval_Encoder.retrieval_encoder import RetrievalEncoder
 
 
 @contextmanager
