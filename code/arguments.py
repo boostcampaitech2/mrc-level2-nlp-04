@@ -28,7 +28,7 @@ class TrainingArguments(OriginTrainingArguments):
         metadata={"help": "wandb run name"},
     )
     retrieval_run_name: Optional[str] = field(
-        default='exp',
+        default='bert-base',  # 이게 제일 성능이 좋았음
         metadata={"help": "retrieval encoder model folder name"},
     )
     evaluation_strategy: IntervalStrategy = field(
@@ -112,7 +112,7 @@ class ModelArguments:
         },
     )
     retrieval_model_name_or_path: str = field(
-        default="klue/roberta-small",
+        default="klue/bert-base",  # 이게 성능이 제일 좋았음
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
@@ -172,7 +172,7 @@ class DataTrainingArguments:
         },
     )
     eval_retrieval: str = field(
-        default='dense',
+        default='sparse',
         metadata={"help": "Choose run passage retrieval using sparse or dense or both embedding"
                           "ex. sparse, dense, both(예정 BM25 + dense)"},
     )
@@ -180,7 +180,7 @@ class DataTrainingArguments:
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
     top_k_retrieval: int = field(
-        default=1,
+        default=30,
         metadata={
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
