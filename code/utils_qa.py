@@ -40,7 +40,7 @@ from arguments import (
     DataTrainingArguments,
     TrainingArguments,
 )
-from utils_retrieval import run_sparse_retrieval
+from utils_retrieval import run_sparse_retrieval, run_dense_retrieval
 from data_processing import DataProcessor
 
 logger = logging.getLogger(__name__)
@@ -396,6 +396,12 @@ def get_args():
     training_args.output_dir = os.path.join(
         training_args.output_dir, training_args.project_name, training_args.run_name
     )
+
+    assert training_args.retrieval_run_name is not None, "[Error] Retrieval run name need"
+    training_args.retrieval_output_dir = os.path.join(
+        training_args.retrieval_output_dir, training_args.retrieval_run_name
+    )
+
     if not training_args.do_predict:
         training_args.output_dir = increment_path(training_args.output_dir)
 
@@ -417,6 +423,9 @@ def get_args():
 
     print(training_args)
     print(f"model is from {model_args.model_name_or_path}")
+    print(f"retrieval model is from {model_args.retrieval_model_name_or_path}")
+    print(f"output_dir is from {training_args.output_dir}")
+    print(f"retrieval_output_dir is from {training_args.retrieval_output_dir}")
     print(f"data is from {data_args.dataset_name}")
 
     return model_args, data_args, training_args
@@ -436,7 +445,7 @@ def set_seed_everything(seed):
     return None
 
 
-def get_models(training_args, model_args):
+def get_models( model_args):
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     model_config = AutoConfig.from_pretrained(
@@ -498,12 +507,19 @@ def get_data(training_args, model_args, data_args, tokenizer):
         return datasets, train_dataset, eval_dataset, data_collator
     else:
         # test data 에는 context 가 없으므로 retrieval 해서 추가해줌
-        if data_args.eval_retrieval:
+        if data_args.eval_retrieval == 'sparse':
             datasets = run_sparse_retrieval(
                 tokenizer.tokenize,
                 datasets,
                 training_args,
                 data_args,
+            )
+        elif data_args.eval_retrieval == 'dense':
+            datasets = run_dense_retrieval(
+                training_args,
+                model_args,
+                data_args,
+                datasets
             )
         # test data 폴더에 들어있는 데이터에서도 validation 으로 되어있음
         eval_dataset = datasets['validation']
