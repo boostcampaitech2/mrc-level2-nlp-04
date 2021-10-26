@@ -1,22 +1,25 @@
 import os
 import json
 import time
+from contextlib import contextmanager
+
 import faiss
 import pickle
 import numpy as np
 import pandas as pd
+import torch
+from torch.utils.data import TensorDataset, DataLoader, RandomSampler
 
 from tqdm.auto import tqdm
-from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
-
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 from datasets import (
     Dataset,
     load_from_disk,
-    concatenate_datasets,
 )
+from transformers import AutoConfig, AutoTokenizer
+
+from model.Retrieval_Encoder.retrieval_encoder import RetrievalEncoder
 
 
 @contextmanager
@@ -26,37 +29,22 @@ def timer(name):
     print(f"[{name}] done in {time.time() - t0:.3f} s")
 
 
-class SparseRetrieval:
-    def __init__(
-            self,
-            tokenize_fn,
-            data_path: Optional[str] = "../data/",
-            context_path: Optional[str] = "wikipedia_documents.json",
-    ) -> NoReturn:
-
-        """
-        Arguments:
-            tokenize_fn:
-                기본 text를 tokenize해주는 함수입니다.
-                아래와 같은 함수들을 사용할 수 있습니다.
-                - lambda x: x.split(' ')
-                - Huggingface Tokenizer
-                - konlpy.tag의 Mecab
-
-            data_path:
-                데이터가 보관되어 있는 경로입니다.
-
-            context_path:
-                Passage들이 묶여있는 파일명입니다.
-
-            data_path/context_path가 존재해야합니다.
-
-        Summary:
-            Passage 파일을 불러오고 TfidfVectorizer를 선언하는 기능을 합니다.
-        """
+class DenseRetrieval:
+    def __init__(self, training_args, model_args, data_args, tokenizer, p_encoder, q_encoder, num_neg=2,
+                 data_path='../data', context_path='wikipedia_documents.json'):
+        self.training_args = training_args
+        self.model_args = model_args
+        self.data_args = data_args
+        # self.args = args
+        self.tokenizer = tokenizer
+        self.p_encoder = p_encoder
+        self.q_encoder = q_encoder
+        self.num_neg = num_neg
 
         self.data_path = data_path
-        with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
+        self.context_path = context_path
+
+        with open(os.path.join(self.data_path, self.context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
         self.contexts = list(
@@ -65,46 +53,114 @@ class SparseRetrieval:
         print(f"Lengths of unique contexts : {len(self.contexts)}")
         self.ids = list(range(len(self.contexts)))
 
-        # Transform by vectorizer
-        self.tfidfv = TfidfVectorizer(
-            tokenizer=tokenize_fn,
-            ngram_range=(1, 2),
-            max_features=50000,
-        )
-
-        self.p_embedding = self.get_sparse_embedding()  # get_sparse_embedding()로 생성합니다
-        self.indexer = None  # build_faiss()로 생성합니다.
-
-    def get_sparse_embedding(self) -> NoReturn:
+    def get_dense_embedding(self) -> NoReturn:
 
         """
         Summary:
-            Passage Embedding을 만들고
-            TFIDF와 Embedding을 pickle로 저장합니다.
-            만약 미리 저장된 파일이 있으면 저장된 pickle을 불러옵니다.
+            Passage Embedding 을 만들고
+            Embedding matrix 와 Embedding 을 pickle 로 저장합니다.
+            만약 미리 저장된 파일이 있으면 저장된 pickle 을 불러옵니다.
         """
 
         # Pickle을 저장합니다.
-        pickle_name = f"sparse_embedding.bin"
-        tfidfv_name = f"tfidfv.bin"
-        emd_path = os.path.join(self.data_path, pickle_name)
-        tfidfv_path = os.path.join(self.data_path, tfidfv_name)
+        pickle_name = f"dense_embedding.bin"
+        emd_path = os.path.join(self.data_path, self.training_args.retrieval_run_name + '_' + pickle_name)
 
-        if os.path.isfile(emd_path) and os.path.isfile(tfidfv_path):
+        if os.path.isfile(emd_path):
             with open(emd_path, "rb") as file:
                 self.p_embedding = pickle.load(file)
-            with open(tfidfv_path, "rb") as file:
-                self.tfidfv = pickle.load(file)
             print("Embedding pickle load.")
         else:
             print("Build passage embedding")
-            self.p_embedding = self.tfidfv.fit_transform(self.contexts)
+            p_seqs = self.tokenizer(
+                self.contexts,
+                padding='max_length',
+                truncation=True,
+                return_tensors='pt',
+                return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True,
+            )
+            if 'roberta' in self.model_args.retrieval_model_name_or_path:
+                passage_dataset = TensorDataset(
+                    p_seqs['input_ids'],
+                    p_seqs['attention_mask'],
+                )
+            else:
+                passage_dataset = TensorDataset(
+                    p_seqs['input_ids'],
+                    p_seqs['attention_mask'],
+                    p_seqs['token_type_ids'],
+                )
+
+            passage_dataloader = DataLoader(passage_dataset, batch_size=self.training_args.per_device_eval_batch_size)
+
+            self.p_encoder.eval()
+
+            p_embedding_list = []
+            passage_iterator = tqdm(passage_dataloader, unit='batch')
+            for batch in passage_iterator:
+                with torch.no_grad():
+                    if torch.cuda.is_available():
+                        batch = tuple(t.cuda() for t in batch)
+
+                    if 'roberta' in self.model_args.retrieval_model_name_or_path:
+                        p_inputs = {'input_ids': batch[0],
+                                    'attention_mask': batch[1]}
+                    else:
+                        p_inputs = {'input_ids': batch[0],
+                                    'attention_mask': batch[1],
+                                    'token_type_ids': batch[2]}
+
+                    p_outputs = self.p_encoder(**p_inputs)
+                    p_embedding_list.append(p_outputs.detach().cpu().numpy())
+
+            self.p_embedding = np.vstack(p_embedding_list)
             print(self.p_embedding.shape)
             with open(emd_path, "wb") as file:
                 pickle.dump(self.p_embedding, file)
-            with open(tfidfv_path, "wb") as file:
-                pickle.dump(self.tfidfv, file)
             print("Embedding pickle saved.")
+
+    def get_dataloader(self):
+        '''train, validation, test의 dataloader와 dataset를 반환하는 함수'''
+        datasets = load_from_disk(self.data_args.dataset_name)
+        print(datasets)
+
+        train_dataset = datasets['train']
+        eval_dataset = datasets['validation']
+
+        train_q_seqs = self.tokenizer(
+            train_dataset['question'], padding='max_length', truncation=True, return_tensors='pt',
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
+        train_p_seqs = self.tokenizer(
+            train_dataset['context'], padding='max_length', truncation=True, return_tensors='pt',
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
+        eval_q_seqs = self.tokenizer(
+            eval_dataset['question'], padding='max_length', truncation=True, return_tensors='pt',
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
+        eval_p_seqs = self.tokenizer(
+            eval_dataset['context'], padding='max_length', truncation=True, return_tensors='pt',
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
+
+        if 'roberta' in self.model_args.retrieval_model_name_or_path:
+            train_dataset = TensorDataset(train_p_seqs['input_ids'], train_p_seqs['attention_mask'],
+                                          train_q_seqs['input_ids'], train_q_seqs['attention_mask'])
+            eval_dataset = TensorDataset(eval_p_seqs['input_ids'], eval_p_seqs['attention_mask'],
+                                         eval_q_seqs['input_ids'], eval_q_seqs['attention_mask'])
+        else:
+            train_dataset = TensorDataset(
+                train_p_seqs['input_ids'], train_p_seqs['attention_mask'], train_p_seqs['token_type_ids'],
+                train_q_seqs['input_ids'], train_q_seqs['attention_mask'], train_q_seqs['token_type_ids'])
+            eval_dataset = TensorDataset(
+                eval_p_seqs['input_ids'], eval_p_seqs['attention_mask'], eval_p_seqs['token_type_ids'],
+                eval_q_seqs['input_ids'], eval_q_seqs['attention_mask'], eval_q_seqs['token_type_ids'])
+
+        train_sampler = RandomSampler(train_dataset)
+        train_dataloader = DataLoader(train_dataset, sampler=train_sampler,
+                                      batch_size=self.training_args.per_device_retrieval_train_batch_size)
+        eval_sampler = RandomSampler(eval_dataset)
+        eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler,
+                                     batch_size=self.training_args.per_device_retrieval_eval_batch_size)
+
+        return train_dataloader, eval_dataloader
 
     def build_faiss(self, num_clusters=64) -> NoReturn:
 
@@ -144,8 +200,7 @@ class SparseRetrieval:
             print("Faiss Indexer Saved.")
 
     def retrieve(
-            self, query_or_dataset: Union[str, Dataset],
-            topk: Optional[int] = 1,  # use_faiss: bool,
+            self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -171,9 +226,7 @@ class SparseRetrieval:
         assert self.p_embedding is not None, "get_sparse_embedding() 메소드를 먼저 수행해줘야합니다."
 
         if isinstance(query_or_dataset, str):
-            doc_scores, doc_indices = (
-                self.get_relevant_doc(query_or_dataset, k=topk)
-            )
+            doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
             print("[Search query]\n", query_or_dataset, "\n")
 
             for i in range(topk):
@@ -187,12 +240,9 @@ class SparseRetrieval:
             # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
             total = []
             with timer("query exhaustive search"):
-                doc_scores, doc_indices = self.get_relevant_doc_bulk(
-                    query_or_dataset["question"], k=topk
-                )
-            for idx, example in enumerate(
-                    tqdm(query_or_dataset, desc="Sparse retrieval: ")
-            ):
+                doc_scores, doc_indices = self.get_relevant_doc_bulk(query_or_dataset["question"], k=topk)
+
+            for idx, example in enumerate(tqdm(query_or_dataset, desc="Dense retrieval: ")):
                 tmp = {
                     # Query와 해당 id를 반환합니다.
                     "question": example["question"],
@@ -212,9 +262,7 @@ class SparseRetrieval:
             cqas = pd.DataFrame(total)
             return cqas
 
-    def get_relevant_doc(
-            self, query: str, k: Optional[int] = 1
-    ) -> Tuple[List, List]:
+    def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
 
         """
         Arguments:
@@ -226,14 +274,20 @@ class SparseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
 
-        with timer("transform"):
-            query_vec = self.tfidfv.transform([query])
-        assert (
-                np.sum(query_vec) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+        self.q_encoder.eval()
+
+        with timer("query encoding"):
+            q_seq = self.tokenizer(
+                [query],
+                padding='max_length',
+                truncation=True,
+                return_tensors='pt',
+                return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True,
+            ).to(self.training_args.device)
+            query_vec = self.q_encoder(**q_seq).detach().to('cpu').numpy()  # (num_query=1, emb_dim)
 
         with timer("query ex search"):
-            result = query_vec * self.p_embedding.T
+            result = np.matmul(query_vec, self.p_embedding.T)
         if not isinstance(result, np.ndarray):
             result = result.toarray()
 
@@ -246,25 +300,59 @@ class SparseRetrieval:
             self, queries: List, k: Optional[int] = 1
     ) -> Tuple[List, List]:
 
-        """
-        Arguments:
-            queries (List):
-                하나의 Query를 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        Note:
-            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
-        """
+        self.q_encoder.eval()
 
-        query_vec = self.tfidfv.transform(queries)
-        assert (
-                np.sum(query_vec) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+        q_seqs = self.tokenizer(
+            queries,
+            padding='max_length',
+            truncation=True,
+            return_tensors='pt',
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True,
+        ).to(self.training_args.device)
 
-        result = query_vec * self.p_embedding.T
+        if 'roberta' in self.model_args.retrieval_model_name_or_path:
+            question_dataset = TensorDataset(
+                q_seqs['input_ids'],
+                q_seqs['attention_mask'],
+            )
+        else:
+            question_dataset = TensorDataset(
+                q_seqs['input_ids'],
+                q_seqs['attention_mask'],
+                q_seqs['token_type_ids'],
+            )
+
+        question_dataloader = DataLoader(question_dataset, batch_size=self.training_args.per_device_eval_batch_size)
+
+        q_embedding_list = []
+        question_iterator = tqdm(question_dataloader, unit='batch')
+        for batch in question_iterator:
+            with torch.no_grad():
+                if torch.cuda.is_available():
+                    batch = tuple(t.cuda() for t in batch)
+
+                if 'roberta' in self.model_args.retrieval_model_name_or_path:
+                    q_inputs = {'input_ids': batch[0],
+                                'attention_mask': batch[1]}
+                else:
+                    q_inputs = {'input_ids': batch[0],
+                                'attention_mask': batch[1],
+                                'token_type_ids': batch[2]}
+
+                q_outputs = self.q_encoder(**q_inputs)
+                q_embedding_list.append(q_outputs.detach().cpu().numpy())
+
+        query_embedding = np.vstack(q_embedding_list)
+
+        result = np.matmul(query_embedding, self.p_embedding.T)
         if not isinstance(result, np.ndarray):
             result = result.toarray()
-
+        # doc_scores = []
+        # doc_indices = []
+        # for i in range(result.shape[0]):
+        #     sorted_result = np.argsort(result[i, :])[::-1]
+        #     doc_scores.append(result[i, :][sorted_result].tolist()[:k])
+        #     doc_indices.append(sorted_result.tolist()[:k])
 
         # 진명훈님 공유해주신 코드 적용
         doc_scores = np.partition(result, -k)[:, -k:][:, ::-1]
@@ -272,9 +360,7 @@ class SparseRetrieval:
         doc_scores = np.sort(doc_scores, axis=-1)[:, ::-1].tolist()
         doc_indices = np.argpartition(result, -k)[:, -k:][:, ::-1]
         r, c = ind.shape
-
         ind = ind + np.tile(np.arange(r).reshape(-1, 1), (1, c)) * c
-
         doc_indices = doc_indices.ravel()[ind].reshape(r, c).tolist()
         return doc_scores, doc_indices
 
@@ -398,76 +484,15 @@ class SparseRetrieval:
         return D.tolist(), I.tolist()
 
 
-if __name__ == "__main__":
-
-    import argparse
-
-    parser = argparse.ArgumentParser(description="")
-    parser.add_argument(
-        "--dataset_name", default="../data/train_dataset", type=str, help=""
-    )
-    parser.add_argument(
-        "--model_name_or_path",
-        default="klue/roberta-small",
-        type=str,
-        help="",
-    )
-    parser.add_argument("--data_path", default="../data", type=str, help="")
-    parser.add_argument(
-        "--context_path", default="wikipedia_documents.json", type=str, help=""
-    )
-    parser.add_argument("--use_faiss", default=False, type=bool, help="")
-
-    args = parser.parse_args()
-
-    # Test sparse
-    org_dataset = load_from_disk(args.dataset_name)
-    full_ds = concatenate_datasets(
-        [
-            org_dataset["train"].flatten_indices(),
-            org_dataset["validation"].flatten_indices(),
-        ]
-    )  # train dev 를 합친 4192 개 질문에 대해 모두 테스트
-    print("*" * 40, "query dataset", "*" * 40)
-    print(full_ds)
-
-    from transformers import AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model_name_or_path,
-        use_fast=False,
-    )
-
-    retriever = SparseRetrieval(
-        tokenize_fn=tokenizer.tokenize,
-        data_path=args.data_path,
-        context_path=args.context_path,
-    )
-
-    query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
-
-    if args.use_faiss:
-        retriever.build_faiss()
-
-        # test single query
-        with timer("single query by faiss"):
-            scores, indices = retriever.retrieve_faiss(query)
-
-        # test bulk
-        with timer("bulk query by exhaustive search"):
-            df = retriever.retrieve_faiss(full_ds)
-            df["correct"] = df["original_context"] == df["context"]
-
-            print("correct retrieval result by faiss", df["correct"].sum() / len(df))
-
+def get_encoders(training_args, model_args):
+    model_config = AutoConfig.from_pretrained(model_args.retrieval_model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_args.retrieval_model_name_or_path, use_fast=True)
+    if model_args.use_trained_model:
+        p_encoder_path = os.path.join(training_args.retrieval_output_dir, 'p_encoder')
+        q_encoder_path = os.path.join(training_args.retrieval_output_dir, 'q_encoder')
+        p_encoder = RetrievalEncoder(p_encoder_path, model_config)
+        q_encoder = RetrievalEncoder(q_encoder_path, model_config)
     else:
-        with timer("bulk query by exhaustive search"):
-            df = retriever.retrieve(full_ds)
-            df["correct"] = df["original_context"] == df["context"]
-            print(
-                "correct retrieval result by exhaustive search",
-                df["correct"].sum() / len(df),
-            )
-
-        with timer("single query by exhaustive search"):
-            scores, indices = retriever.retrieve(query)
+        p_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+        q_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+    return tokenizer, p_encoder, q_encoder
