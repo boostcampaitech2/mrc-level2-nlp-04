@@ -34,7 +34,7 @@ from transformers import is_torch_available, PreTrainedTokenizerFast, HfArgument
     AutoModelForQuestionAnswering, DataCollatorWithPadding
 from transformers.trainer_utils import get_last_checkpoint, EvalPrediction
 
-from datasets import DatasetDict, load_from_disk, load_metric
+from datasets import load_from_disk, concatenate_datasets, DatasetDict, Dataset, load_metric
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
@@ -535,3 +535,11 @@ metric = load_metric("squad")
 
 def compute_metrics(p: EvalPrediction):
     return metric.compute(predictions=p.predictions, references=p.label_ids)
+
+
+def make_combined_dataset():
+    dataset = load_from_disk("../data/train_dataset/")
+    train_dataset = dataset['train']
+    valid_dataset = dataset['validation']
+    combined_dataset = concatenate_datasets([train_dataset, valid_dataset])
+    combined_dataset.save_to_disk('../data/combined_dataset')

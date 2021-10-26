@@ -8,7 +8,7 @@ import wandb
 from transformers import EarlyStoppingCallback
 
 from utils_qa import check_no_error, get_args, set_seed_everything, get_models, get_data, \
-    post_processing_function, compute_metrics
+    post_processing_function, compute_metrics, make_combined_dataset
 from trainer_qa import QuestionAnsweringTrainer
 
 import pandas as pd
@@ -84,6 +84,8 @@ def main():
         data_processor = DataProcessor(tokenizer, model_args, data_args)
         origin_output_dir = training_args.output_dir
 
+        if not os.path.isdir('../data/combined_dataset'):
+            make_combined_dataset()
         combined_datasets = load_from_disk('../data/combined_dataset')
         kf = KFold(n_splits=5, random_state=training_args.seed, shuffle=True)
         for idx, (train_index, valid_index) in enumerate(kf.split(combined_datasets), 1):
