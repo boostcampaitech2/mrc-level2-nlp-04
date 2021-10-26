@@ -17,6 +17,7 @@ for k in range(1, 6):
     all_data.append(data)
 
 result = {}
+score = {}
 ids = list(all_data[0].keys())
 for id in ids:
     pred = defaultdict(int)
@@ -27,8 +28,12 @@ for id in ids:
             temp[text] = max(temp[text], p)
         for k, v in temp.items():
             pred[k] += v
-    answer = sorted(pred.items(), key = lambda x: -x[1])[0][0]
+    answer = sorted(pred.items(), key=lambda x: -x[1])[0][0]
     result[id] = answer
+    score[id] = sorted(pred.items(), key=lambda x: -x[1])
 
 with open(f'../predict/{args.project_name}/{args.run_name}/combined_predictions.json', 'w') as f:
     json.dump(result, f)
+
+with open(f'../predict/{args.project_name}/{args.run_name}/combined_score.json', 'w') as f:
+    json.dump(score, f)
