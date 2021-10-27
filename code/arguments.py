@@ -20,7 +20,7 @@ class TrainingArguments(OriginTrainingArguments):
     )
     project_name: str = field(
         # PR 하실때는 None 으로 바꿔서 올려주세요! 얘의 목적은 wandb project name 설정을 위함입니다.
-        default=None,
+        default='mrc_testing',
         metadata={"help": "wandb project name"},
     )
     run_name: Optional[str] = field(
@@ -129,6 +129,7 @@ class ModelArguments:
             "help": "whether using fine-tuned retrieval model"
         },
     )
+
 
 
 @dataclass

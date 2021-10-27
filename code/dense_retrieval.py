@@ -94,6 +94,7 @@ class DenseRetrieval:
 
             passage_dataloader = DataLoader(passage_dataset, batch_size=self.training_args.per_device_eval_batch_size)
 
+
             self.p_encoder.eval()
 
             p_embedding_list = []
@@ -122,7 +123,9 @@ class DenseRetrieval:
 
     def get_dataloader(self):
         '''train, validation, test의 dataloader와 dataset를 반환하는 함수'''
+
         datasets = load_from_disk(self.data_args.dataset_name)
+
         print(datasets)
 
         train_dataset = datasets['train']
@@ -157,6 +160,7 @@ class DenseRetrieval:
             eval_dataset = TensorDataset(
                 eval_p_seqs['input_ids'], eval_p_seqs['attention_mask'], eval_p_seqs['token_type_ids'],
                 eval_q_seqs['input_ids'], eval_q_seqs['attention_mask'], eval_q_seqs['token_type_ids'])
+
 
         train_sampler = RandomSampler(train_dataset)
         train_dataloader = DataLoader(train_dataset, sampler=train_sampler,
@@ -350,6 +354,7 @@ class DenseRetrieval:
         query_embedding = np.vstack(q_embedding_list)
 
         # result = cp.matmul(cp.asarray(query_embedding), cp.asarray(self.p_embedding.T)).get()
+
         result = np.matmul(query_embedding, self.p_embedding.T)
         if not isinstance(result, np.ndarray):
             result = result.toarray()
@@ -518,4 +523,5 @@ def get_encoders(training_args, model_args):
         else:
             p_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
             q_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+
     return tokenizer, p_encoder, q_encoder

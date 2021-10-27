@@ -448,10 +448,12 @@ def set_seed_everything(seed):
 def get_models( model_args):
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
+    print(f'model config : {model_args.config_name}')
+    print(f'model config : {model_args.model_name_or_path}')
     model_config = AutoConfig.from_pretrained(
         model_args.config_name
         if model_args.config_name is not None
-        else model_args.model_name_or_path,
+        else model_args.model_name_or_path
     )
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name

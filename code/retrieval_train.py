@@ -1,5 +1,7 @@
+
 import logging
 import os.path
+
 
 import torch
 import torch.nn.functional as F
@@ -33,6 +35,7 @@ def main():
     if torch.cuda.is_available():
         p_encoder.to('cuda')
         q_encoder.to('cuda')
+
 
     # set wandb
     os.environ['WANDB_LOG_MODEL'] = 'true'
@@ -232,3 +235,4 @@ def train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, 
 
 if __name__ == '__main__':
     main()
+

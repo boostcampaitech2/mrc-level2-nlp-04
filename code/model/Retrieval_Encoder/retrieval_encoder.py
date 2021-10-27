@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import torch
 from torch import nn
 from transformers import AutoModel
@@ -11,16 +12,39 @@ class RetrievalEncoder(nn.Module):
 
     def forward(self, input_ids, attention_mask=None, token_type_ids=None):
         outputs = self.encoder(input_ids,
+=======
+from transformers import AutoModel, PreTrainedModel
+import torch.nn as nn
+import torch
+from torch.cuda.amp import autocast
+
+class RetrievalEncoder(PreTrainedModel):
+    def __init__(self, model_name, model_config):
+        super(RetrievalEncoder, self).__init__(model_config)
+
+        self.roberta = AutoModel.from_pretrained(model_name, config=model_config)
+
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None):
+        outputs = self.roberta(input_ids,
+>>>>>>> 3a0cfb00d7dce3bd6d3aa20c1f615c544e2bb9fc
                                attention_mask=attention_mask,
                                token_type_ids=token_type_ids)
 
         pooled_output = outputs[1]
+<<<<<<< HEAD
 
         return pooled_output
 
 class BiLSTM_RetrievalEncoder(nn.Module):
     def __init__(self, model_name, model_config):
         super(BiLSTM_RetrievalEncoder, self).__init__()
+=======
+        return pooled_output
+
+class BiLSTM_RetrievalEncoder(PreTrainedModel):
+    def __init__(self, model_name, model_config):
+        super(BiLSTM_RetrievalEncoder, self).__init__(model_config)
+>>>>>>> 3a0cfb00d7dce3bd6d3aa20c1f615c544e2bb9fc
 
         self.model = AutoModel.from_pretrained(model_name, config=model_config)
         self.hidden_dim = model_config.hidden_size  # roberta hidden dim = 1024
@@ -40,5 +64,9 @@ class BiLSTM_RetrievalEncoder(nn.Module):
         # (16, 1024) (batch, hidden_dim)
         cat_hidden = torch.cat((last_hidden[0], last_hidden[1]), dim=1)
         logits = self.fc(cat_hidden.view(-1,self.hidden_dim*2,1))
+<<<<<<< HEAD
         return logits.squeeze()
 
+=======
+        return logits.squeeze()
+>>>>>>> 3a0cfb00d7dce3bd6d3aa20c1f615c544e2bb9fc
