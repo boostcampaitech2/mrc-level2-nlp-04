@@ -123,6 +123,12 @@ class ModelArguments:
             "help": "whether using fine-tuned retrieval model"
         },
     )
+    use_custom_model: bool = field(
+        default=False,
+        metadata={
+            "help": "whether using fine-tuned retrieval model"
+        },
+    )
 
 
 @dataclass

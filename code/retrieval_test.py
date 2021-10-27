@@ -10,6 +10,7 @@ from utils_qa import get_args
 
 if __name__ == "__main__":
     # get arguments
+    # os.environ["TOKENIZERS_PARALLELISM"] = "false"
     model_args, data_args, training_args = get_args()
 
     # Test sparse

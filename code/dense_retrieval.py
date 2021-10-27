@@ -7,6 +7,7 @@ import faiss
 import pickle
 import numpy as np
 import pandas as pd
+import cupy as cp
 import torch
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler
 
@@ -17,9 +18,9 @@ from datasets import (
     Dataset,
     load_from_disk,
 )
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer, BertTokenizer
 
-from model.Retrieval_Encoder.retrieval_encoder import RetrievalEncoder
+from model.Retrieval_Encoder.retrieval_encoder import RetrievalEncoder, BiLSTM_RetrievalEncoder
 
 
 @contextmanager
@@ -129,16 +130,20 @@ class DenseRetrieval:
 
         train_q_seqs = self.tokenizer(
             train_dataset['question'], padding='max_length', truncation=True, return_tensors='pt',
-            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True
+        )
         train_p_seqs = self.tokenizer(
             train_dataset['context'], padding='max_length', truncation=True, return_tensors='pt',
-            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True
+        )
         eval_q_seqs = self.tokenizer(
             eval_dataset['question'], padding='max_length', truncation=True, return_tensors='pt',
-            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True
+        )
         eval_p_seqs = self.tokenizer(
             eval_dataset['context'], padding='max_length', truncation=True, return_tensors='pt',
-            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True)
+            return_token_type_ids=False if 'roberta' in self.model_args.retrieval_model_name_or_path else True
+        )
 
         if 'roberta' in self.model_args.retrieval_model_name_or_path:
             train_dataset = TensorDataset(train_p_seqs['input_ids'], train_p_seqs['attention_mask'],
@@ -344,6 +349,7 @@ class DenseRetrieval:
 
         query_embedding = np.vstack(q_embedding_list)
 
+        # result = cp.matmul(cp.asarray(query_embedding), cp.asarray(self.p_embedding.T)).get()
         result = np.matmul(query_embedding, self.p_embedding.T)
         if not isinstance(result, np.ndarray):
             result = result.toarray()
@@ -485,14 +491,31 @@ class DenseRetrieval:
 
 
 def get_encoders(training_args, model_args):
-    model_config = AutoConfig.from_pretrained(model_args.retrieval_model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(model_args.retrieval_model_name_or_path, use_fast=True)
+    model_config = AutoConfig.from_pretrained(model_args.retrieval_model_name_or_path)
+
     if model_args.use_trained_model:
         p_encoder_path = os.path.join(training_args.retrieval_output_dir, 'p_encoder')
         q_encoder_path = os.path.join(training_args.retrieval_output_dir, 'q_encoder')
-        p_encoder = RetrievalEncoder(p_encoder_path, model_config)
-        q_encoder = RetrievalEncoder(q_encoder_path, model_config)
+        if model_args.use_custom_model:
+            p_encoder = BiLSTM_RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+            q_encoder = BiLSTM_RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+            p_encoder_state_dict = torch.load(os.path.join(p_encoder_path+'/', 'pytorch_model.bin'))
+            q_encoder_state_dict = torch.load(os.path.join(q_encoder_path + '/', 'pytorch_model.bin'))
+            p_encoder.load_state_dict(p_encoder_state_dict)
+            q_encoder.load_state_dict(q_encoder_state_dict)
+        else:
+            p_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+            q_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+            p_encoder_state_dict = torch.load(os.path.join(p_encoder_path + '/', 'pytorch_model.bin'))
+            q_encoder_state_dict = torch.load(os.path.join(q_encoder_path + '/', 'pytorch_model.bin'))
+            p_encoder.load_state_dict(p_encoder_state_dict)
+            q_encoder.load_state_dict(q_encoder_state_dict)
     else:
-        p_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
-        q_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+        if model_args.use_custom_model:
+            p_encoder = BiLSTM_RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+            q_encoder = BiLSTM_RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+        else:
+            p_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
+            q_encoder = RetrievalEncoder(model_args.retrieval_model_name_or_path, model_config)
     return tokenizer, p_encoder, q_encoder
