@@ -513,6 +513,7 @@ def get_data(training_args, model_args, data_args, tokenizer):
                 datasets,
                 training_args,
                 data_args,
+                model_args.tokenizer_name
             )
         elif data_args.eval_retrieval == 'dense':
             datasets = run_dense_retrieval(

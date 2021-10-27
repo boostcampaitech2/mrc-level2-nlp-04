@@ -188,3 +188,6 @@ class DataTrainingArguments:
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
     )
+    bm25: bool = field(
+        default=False, metadata={"help": "Whether to score with bm25 instead of tfidf"}
+    )

@@ -17,14 +17,15 @@ def run_sparse_retrieval(
         datasets: DatasetDict,
         training_args: TrainingArguments,
         data_args: DataTrainingArguments,
+        tokenizer_name,
         data_path: str = "../data",
         context_path: str = "wikipedia_documents.json",
 ) -> DatasetDict:
     # Query에 맞는 Passage들을 Retrieval 합니다.
     retriever = SparseRetrieval(
-        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
+        tokenize_fn=tokenize_fn, tokenizer_name=tokenizer_name, data_path=data_path, context_path=context_path,
     )
-    retriever.get_sparse_embedding()
+    retriever.get_sparse_embedding(data_args.bm25)
 
     if data_args.use_faiss:
         retriever.build_faiss(num_clusters=data_args.num_clusters)
@@ -32,7 +33,7 @@ def run_sparse_retrieval(
             datasets["validation"], topk=data_args.top_k_retrieval
         )
     else:
-        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+        df = retriever.retrieve(datasets["validation"], bm25=data_args.bm25, topk=data_args.top_k_retrieval)
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:

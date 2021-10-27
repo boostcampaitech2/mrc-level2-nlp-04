@@ -3,6 +3,7 @@ import os
 import sys
 
 from typing import NoReturn
+from scipy.sparse import data
 
 import wandb
 from transformers import EarlyStoppingCallback
@@ -66,6 +67,8 @@ def main():
             --run_name {run}"
             + (f" --additional_model {model_args.additional_model}"
                if model_args.additional_model is not None else '')
+            + (f' --bm25 {data_args.bm25}'
+            if data_args.bm25 == True else '')
         )
         os.system(string)
 

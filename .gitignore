@@ -3,6 +3,8 @@
 outputs/
 data/
 predict/
+wandb/
+output/
 .DS_Store
 *.sh
 
