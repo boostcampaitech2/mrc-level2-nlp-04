@@ -40,6 +40,7 @@ from arguments import (
     DataTrainingArguments,
     TrainingArguments,
 )
+from prepare_dataset import get_pickle, make_custom_dataset
 from utils_retrieval import run_sparse_retrieval, run_dense_retrieval, run_elasticsearch
 from data_processing import DataProcessor
 
@@ -422,8 +423,6 @@ def get_args():
         assert training_args.project_name, "project_name 을 arguments.py 에서 지정해주세요!"
         training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
 
-        data_args.dataset_name = '../data/test_dataset/'
-
     print(training_args)
     print(f"model is from {model_args.model_name_or_path}")
     print(f"retrieval model is from {model_args.retrieval_model_name_or_path}")
@@ -488,7 +487,24 @@ def get_models( model_args):
 
 def get_data(training_args, model_args, data_args, tokenizer):
     '''train, validation, test의 dataloader와 dataset를 반환하는 함수'''
-    datasets = load_from_disk(data_args.dataset_name)
+    if data_args.dataset_name == 'basic':
+        if training_args.do_train:
+            datasets = load_from_disk('../data/train_dataset')
+        elif training_args.do_predict:
+            datasets = load_from_disk('../data/test_dataset')
+    elif data_args.dataset_name == 'preprocess':
+        if os.path.isfile('../data/preprocess_train.pkl'):
+            datasets = get_pickle('../data/preprocess_train.pkl')
+        else:
+            datasets = make_custom_dataset('../data/preprocess_tain.pkl')
+    elif data_args.dataset_name == 'concat':
+        if os.path.isfile('../data/concat_train.pkl'):
+            datasets = get_pickle('../data/concat_train.pkl')
+        else:
+            datasets = make_custom_dataset('../data/concat_train.pkl')
+    else:
+        raise ValueError ('dataset_name have to be one of ["basic", "preprocessed", "concat"]')
+
     print(datasets)
 
     data_processor = DataProcessor(tokenizer, model_args, data_args)

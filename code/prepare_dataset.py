@@ -131,7 +131,7 @@ def make_custom_dataset(dataset_path):
 
         k = 5  # k : how many contexts to concatenate
         for idx, train in enumerate(train_data):
-            res = search_es(es, 'wiki-index', train['question'], k)
+            res = search_es(es, 'preprocess-wiki-index', train['question'], k)
             context_list = [(hit['_source']['document_text'], hit['_score']) for hit in res['hits']['hits']]
             contexts = train['context']
             count = 0
@@ -146,8 +146,8 @@ def make_custom_dataset(dataset_path):
             train_data[idx]['context'] = contexts
 
         for idx, valid in enumerate(valid_dataset):
-            res = search_es(es, 'wiki-index', valid['question'], k)
-            context_list = [(hit['_source']['document_text'], hit['_score']) for hit in res['hits']['hits']]
+            result = search_es(es, 'preprocess-wiki-index', valid['question'], k)
+            context_list = [(hit['_source']['document_text'], hit['_score']) for hit in result['hits']['hits']]
             contexts = valid['context']
             count = 0
             for context in context_list:

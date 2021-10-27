@@ -66,6 +66,7 @@ def main():
             --run_name {run}"
             + (f" --additional_model {model_args.additional_model}"
                if model_args.additional_model is not None else '')
+            + " --elastic_index_name preprocess-wiki-index"
         )
         os.system(string)
 
