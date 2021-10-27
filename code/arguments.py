@@ -105,6 +105,12 @@ class ModelArguments:
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
     )
+    finetuned_mrc_model_path: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Pretrained config name or path if not the same as model_name"
+        },
+    )
     additional_model: Optional[str] = field(
         default=None,
         metadata={
@@ -122,6 +128,11 @@ class ModelArguments:
         metadata={
             "help": "whether using fine-tuned retrieval model"
         },
+    )
+    retrieval_type: str = field(
+        default='elastic',
+        metadata={"help": "Choose run passage retrieval using sparse or dense or both embedding"
+                          "ex. sparse, dense, both(예정 BM25 + dense), elastic"},
     )
 
 
@@ -171,11 +182,6 @@ class DataTrainingArguments:
                     "and end predictions are not conditioned on one another."
         },
     )
-    eval_retrieval: str = field(
-        default='sparse',
-        metadata={"help": "Choose run passage retrieval using sparse or dense or both embedding"
-                          "ex. sparse, dense, both(예정 BM25 + dense)"},
-    )
     num_clusters: int = field(
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
@@ -187,4 +193,9 @@ class DataTrainingArguments:
     )
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
+    )
+    elastic_index_name: Optional[str] = field(
+        default="wiki-index",
+        metadata={
+            "help": "Elastic search index name[wiki-index]"}
     )
