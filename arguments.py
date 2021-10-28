@@ -20,11 +20,11 @@ class TrainingArguments(OriginTrainingArguments):
     )
     project_name: str = field(
         # PR 하실때는 None 으로 바꿔서 올려주세요! 얘의 목적은 wandb project name 설정을 위함입니다.
-        default=None,
+        default= "dpr_train_final",
         metadata={"help": "wandb project name"},
     )
     run_name: Optional[str] = field(
-        default='exp',
+        default='klue/roberta-small',
         metadata={"help": "wandb run name"},
     )
     retrieval_run_name: Optional[str] = field(
@@ -36,7 +36,7 @@ class TrainingArguments(OriginTrainingArguments):
         metadata={"help": "The evaluation strategy to use."},
     )
     per_device_train_batch_size: int = field(
-        default=32, metadata={"help": "Batch size per GPU/TPU core/CPU for training."}
+        default=16, metadata={"help": "Batch size per GPU/TPU core/CPU for training."}
     )
     per_device_eval_batch_size: int = field(
         default=128, metadata={"help": "Batch size per GPU/TPU core/CPU for evaluation."}
@@ -88,7 +88,7 @@ class ModelArguments:
     """
 
     model_name_or_path: str = field(
-        default="klue/roberta-small",
+        default="klue/roberta-small_faiss",
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
@@ -118,7 +118,7 @@ class ModelArguments:
         },
     )
     use_trained_model: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "whether using fine-tuned retrieval model"
         },
@@ -187,4 +187,10 @@ class DataTrainingArguments:
     )
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
+    )
+    use_rerank: bool = field(
+        default=False, metadata={"help": "Whether to use rerank or not"}
+    )
+    weight_bm25: float = field(
+        default=1.0, metadata={"help": "Weight to BM25 when using rerank"}
     )

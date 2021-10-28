@@ -16,7 +16,7 @@ if __name__ == "__main__":
     org_dataset = load_from_disk('../data/train_dataset')
     full_ds = concatenate_datasets(
         [
-            org_dataset["train"].flatten_indices(),
+            # org_dataset["train"].flatten_indices(),
             org_dataset["validation"].flatten_indices(),
         ]
     )  # train dev 를 합친 4192 개 질문에 대해 모두 테스트
@@ -63,9 +63,12 @@ if __name__ == "__main__":
             print("correct retrieval result by faiss", df["correct"].sum() / len(df))
 
     else:
-        for k in [1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]:
+        for k in [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]:
             with timer("bulk query by exhaustive search"):
-                df = retriever.retrieve(full_ds, topk=k)
+                if data_args.use_rerank:
+                    df = retriever.retrieve_rerank(training_args, model_args, full_ds, topk=k)
+                else:
+                    df = retriever.retrieve(full_ds, topk=k)
                 df["correct"] = df.apply(lambda x: x["original_context"] in x["context"], axis=1)
                 accuracy = round(df['correct'].sum() / len(df) * 100, 2)
                 print(

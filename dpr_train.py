@@ -12,9 +12,8 @@ from transformers import AdamW, AutoTokenizer
 from datasets import load_from_disk
 from utils_qa import set_seed_everything, get_args
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler
-from encoder_model import BertEncoder
 from bm25_first_passage_from_wiki import get_bm25_wrong_passage
-from dense_custom_retrieval import get_encoders
+from dense_retrieval import get_encoders
 
 
 def main():
