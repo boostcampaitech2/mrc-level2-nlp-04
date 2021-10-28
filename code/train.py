@@ -53,7 +53,7 @@ def main():
     os.environ['WANDB_SILENT'] = "true"
 
     if training_args.fold is False:
-        tokenizer, model_config, model = get_models(training_args, model_args)
+        tokenizer, model_config, model = get_models(model_args)
 
         # 오류가 있는지 확인합니다.
         last_checkpoint, max_seq_length = check_no_error(
@@ -70,7 +70,7 @@ def main():
         from transformers import DataCollatorWithPadding
         from data_processing import DataProcessor
 
-        tokenizer, model_config, _ = get_models(training_args, model_args)
+        tokenizer, model_config, _ = get_models(model_args)
 
         # 오류가 있는지 확인합니다.
         last_checkpoint, max_seq_length = check_no_error(
