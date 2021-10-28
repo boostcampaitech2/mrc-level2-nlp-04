@@ -200,3 +200,9 @@ class DataTrainingArguments:
         metadata={
             "help": "Elastic search index name[wiki-index]"}
     )
+    concat_k_num: int = field(
+        default=5,
+        metadata={
+            "help": "Define how many top-k passages to retrieve based on similarity."
+        },
+    )
