@@ -145,7 +145,7 @@ class DataTrainingArguments:
 
     dataset_name: Optional[str] = field(
         default="basic",
-        metadata={"help": "The name of the dataset to use. ['basic', 'concat', 'preprocess', 'random_concat']"},
+        metadata={"help": "The name of the dataset to use. ['basic', 'concat', 'preprocess']"},
     )
     overwrite_cache: bool = field(
         default=False,
@@ -199,10 +199,4 @@ class DataTrainingArguments:
         default="wiki-index",
         metadata={
             "help": "Elastic search index name[wiki-index]"}
-    )
-    concat_k_num: int = field(
-        default=5,
-        metadata={
-            "help": "Define how many top-k passages to retrieve based on similarity."
-        },
     )
