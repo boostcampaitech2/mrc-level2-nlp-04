@@ -34,12 +34,13 @@ from transformers import is_torch_available, PreTrainedTokenizerFast, HfArgument
     AutoModelForQuestionAnswering, DataCollatorWithPadding
 from transformers.trainer_utils import get_last_checkpoint, EvalPrediction
 
-from datasets import load_from_disk, concatenate_datasets, DatasetDict, Dataset, load_metric
+from datasets import load_from_disk, concatenate_datasets, load_metric
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
     TrainingArguments,
 )
+from prepare_dataset import get_pickle, make_custom_dataset
 from utils_retrieval import run_sparse_retrieval, run_dense_retrieval, run_elasticsearch
 from data_processing import DataProcessor
 
@@ -481,7 +482,31 @@ def get_models(model_args):
 
 def get_data(training_args, model_args, data_args, tokenizer):
     '''train, validation, test의 dataloader와 dataset를 반환하는 함수'''
-    datasets = load_from_disk(data_args.dataset_name)
+    if data_args.dataset_name == 'basic':
+        if training_args.do_train:
+            datasets = load_from_disk('../data/train_dataset')
+        elif training_args.do_predict:
+            datasets = load_from_disk('../data/test_dataset')
+    elif data_args.dataset_name == 'preprocess':
+        if os.path.isfile('../data/preprocess_train.pkl'):
+            datasets = get_pickle('../data/preprocess_train.pkl')
+        else:
+            datasets = make_custom_dataset('../data/preprocess_tain.pkl')
+    elif data_args.dataset_name == 'concat':
+        if os.path.isfile(f'../data/concat_{data_args.concat_k_num}_train.pkl'):
+            datasets = get_pickle(f'../data/concat_{data_args.concat_k_num}_train.pkl')
+        else:
+            datasets = make_custom_dataset(f'../data/concat_{data_args.concat_k_num}_train.pkl',
+                                           topk=data_args.concat_k_num)
+    elif data_args.dataset_name == 'random_concat':
+        if os.path.isfile(f'../data/random_concat_{data_args.concat_k_num}_train.pkl'):
+            datasets = get_pickle(f'../data/random_concat_{data_args.concat_k_num}_train.pkl')
+        else:
+            datasets = make_custom_dataset(f'../data/random_concat_{data_args.concat_k_num}_train.pkl',
+                                           topk=data_args.concat_k_num)
+    else:
+        raise ValueError('dataset_name have to be one of ["basic", "preprocessed", "concat"]')
+
     print(datasets)
 
     data_processor = DataProcessor(tokenizer, model_args, data_args)
