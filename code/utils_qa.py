@@ -34,7 +34,7 @@ from transformers import is_torch_available, PreTrainedTokenizerFast, HfArgument
     AutoModelForQuestionAnswering, DataCollatorWithPadding
 from transformers.trainer_utils import get_last_checkpoint, EvalPrediction
 
-from datasets import DatasetDict, load_from_disk, load_metric
+from datasets import load_from_disk, concatenate_datasets, DatasetDict, Dataset, load_metric
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
@@ -324,7 +324,6 @@ def postprocess_qa_predictions(
 def check_no_error(
         data_args: DataTrainingArguments,
         training_args: TrainingArguments,
-        datasets: DatasetDict,
         tokenizer,
 ) -> Tuple[Any, int]:
     # last checkpoint 찾기.
@@ -361,8 +360,6 @@ def check_no_error(
         )
     max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
 
-    if "validation" not in datasets:
-        raise ValueError("--do_eval requires a validation dataset")
     return last_checkpoint, max_seq_length
 
 
@@ -396,14 +393,10 @@ def get_args():
     training_args.output_dir = os.path.join(
         training_args.output_dir, training_args.project_name, training_args.run_name
     )
-
+    
     assert training_args.retrieval_run_name is not None, "[Error] Retrieval run name need"
     training_args.retrieval_output_dir = os.path.join(
         training_args.retrieval_output_dir, training_args.retrieval_run_name
-    )
-
-    if not training_args.do_predict:
-        training_args.output_dir = increment_path(training_args.output_dir)
 
     # model_name_or_path 를 tokenizer_name 에 지정해줌
     model_args.tokenizer_name = model_args.model_name_or_path
@@ -411,18 +404,17 @@ def get_args():
     # post_processing_function 에서 사용하기 위해 추가
     training_args.max_answer_length = data_args.max_answer_length
 
-    if training_args.do_predict:
+    if not training_args.do_predict:
+        training_args.output_dir = increment_path(training_args.output_dir)
+    else:
         # 학습시 모델을 저장했던 폴더를 model_args.model_name_or_path 에 지정해줌
         if model_args.finetuned_mrc_model_path is None:
             model_args.model_name_or_path = training_args.output_dir
         else:
             model_args.model_name_or_path = model_args.finetuned_mrc_model_path
-
-        # inference 시에는 prediction 결과를 저장하는 곳이 output_dir 이 되므로 새로 지정해줌
-        assert training_args.project_name, "project_name 을 arguments.py 에서 지정해주세요!"
-        training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
-
+      
         data_args.dataset_name = '../data/test_dataset/'
+        training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
 
     print(training_args)
     print(f"model is from {model_args.model_name_or_path}")
@@ -430,6 +422,7 @@ def get_args():
     print(f"output_dir is from {training_args.output_dir}")
     print(f"retrieval_output_dir is from {training_args.retrieval_output_dir}")
     print(f"data is from {data_args.dataset_name}")
+
 
     return model_args, data_args, training_args
 
@@ -501,11 +494,8 @@ def get_data(training_args, model_args, data_args, tokenizer):
         train_dataset = datasets['train']
         eval_dataset = datasets['validation']
 
-        train_column_names = train_dataset.column_names
-        eval_column_names = eval_dataset.column_names
-
-        train_dataset = data_processor.train_tokenizer(train_dataset, train_column_names)
-        eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_column_names)
+        train_dataset = data_processor.train_tokenizer(train_dataset, train_dataset.column_names)
+        eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
 
         return datasets, train_dataset, eval_dataset, data_collator
     else:
@@ -530,10 +520,7 @@ def get_data(training_args, model_args, data_args, tokenizer):
 
         # test data 폴더에 들어있는 데이터에서도 validation 으로 되어있음
         eval_dataset = datasets['validation']
-
-        eval_column_names = eval_dataset.column_names
-
-        eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_column_names)
+        eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
 
         return datasets, eval_dataset, data_collator
 
@@ -571,3 +558,12 @@ metric = load_metric("squad")
 
 def compute_metrics(p: EvalPrediction):
     return metric.compute(predictions=p.predictions, references=p.label_ids)
+
+
+def make_combined_dataset():
+    dataset = load_from_disk("../data/train_dataset/")
+    train_dataset = dataset['train']
+    valid_dataset = dataset['validation']
+    combined_dataset = concatenate_datasets([train_dataset, valid_dataset])
+    combined_dataset.save_to_disk('../data/combined_dataset')
+
