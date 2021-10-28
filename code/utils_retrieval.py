@@ -1,13 +1,13 @@
-import os
-import time
-from contextlib import contextmanager
 from typing import Callable, List
 
 import torch.cuda
 from datasets import DatasetDict, Features, Value, Sequence, Dataset
+from numpy import dot
+from numpy.linalg import norm
 from transformers import TrainingArguments
 
 from arguments import DataTrainingArguments
+from elastic_search import ElasticSearchRetrieval
 from dense_retrieval import DenseRetrieval, get_encoders
 from retrieval import SparseRetrieval
 
@@ -112,3 +112,48 @@ def run_dense_retrieval(training_args, model_args, data_args, datasets):
         )
     datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
     return datasets
+
+
+def run_elasticsearch(training_args, data_args, datasets):
+    # elastic setting & load index
+    retriever = ElasticSearchRetrieval(data_args)
+
+    df, scores = retriever.retrieve(datasets['validation'])
+
+    # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
+    if training_args.do_predict:
+        f = Features(
+            {
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+
+    # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
+    elif training_args.do_eval:
+        f = Features(
+            {
+                "answers": Sequence(
+                    feature={
+                        "text": Value(dtype="string", id=None),
+                        "answer_start": Value(dtype="int32", id=None),
+                    },
+                    length=-1,
+                    id=None,
+                ),
+                "context": Value(dtype="string", id=None),
+                "id": Value(dtype="string", id=None),
+                "question": Value(dtype="string", id=None),
+            }
+        )
+    datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+    return datasets, scores
+
+
+def cos_sim(A, B):
+    '''
+    A,B의 cosine similarity
+    :return: A,B의 cosine similarity
+    '''
+    return dot(A, B) / (norm(A) * norm(B))

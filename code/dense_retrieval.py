@@ -53,6 +53,9 @@ class DenseRetrieval:
         print(f"Lengths of unique contexts : {len(self.contexts)}")
         self.ids = list(range(len(self.contexts)))
 
+        self.p_embedding = self.get_dense_embedding()  # get_sparse_embedding()로 생성합니다
+        self.indexer = None  # build_faiss()로 생성합니다.
+
     def get_dense_embedding(self) -> NoReturn:
 
         """

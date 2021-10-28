@@ -40,7 +40,7 @@ from arguments import (
     DataTrainingArguments,
     TrainingArguments,
 )
-from utils_retrieval import run_sparse_retrieval, run_dense_retrieval
+from utils_retrieval import run_sparse_retrieval, run_dense_retrieval, run_elasticsearch
 from data_processing import DataProcessor
 
 logger = logging.getLogger(__name__)
@@ -389,6 +389,11 @@ def get_args():
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+    assert training_args.project_name is not None, "[Error] Project name needed"
+    training_args.output_dir = os.path.join(
+        training_args.output_dir, training_args.project_name, training_args.run_name
+    )
+    
     assert training_args.retrieval_run_name is not None, "[Error] Retrieval run name need"
     training_args.retrieval_output_dir = os.path.join(
         training_args.retrieval_output_dir, training_args.retrieval_run_name
@@ -399,19 +404,16 @@ def get_args():
     # post_processing_function 에서 사용하기 위해 추가
     training_args.max_answer_length = data_args.max_answer_length
 
-    assert training_args.project_name is not None, "[Error] Project name needed"
-
-    training_args.output_dir = os.path.join(
-        training_args.output_dir, training_args.project_name, training_args.run_name
-    )
-
     if not training_args.do_predict:
         training_args.output_dir = increment_path(training_args.output_dir)
     else:
         # 학습시 모델을 저장했던 폴더를 model_args.model_name_or_path 에 지정해줌
-        model_args.model_name_or_path = training_args.output_dir
+        if model_args.finetuned_mrc_model_path is None:
+            model_args.model_name_or_path = training_args.output_dir
+        else:
+            model_args.model_name_or_path = model_args.finetuned_mrc_model_path
+      
         data_args.dataset_name = '../data/test_dataset/'
-
         training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
 
     print(training_args)
@@ -498,20 +500,24 @@ def get_data(training_args, model_args, data_args, tokenizer):
         return datasets, train_dataset, eval_dataset, data_collator
     else:
         # test data 에는 context 가 없으므로 retrieval 해서 추가해줌
-        if data_args.eval_retrieval == 'sparse':
+        if model_args.retrieval_type == 'sparse':
             datasets = run_sparse_retrieval(
                 tokenizer.tokenize,
                 datasets,
                 training_args,
                 data_args,
             )
-        elif data_args.eval_retrieval == 'dense':
+        elif model_args.retrieval_type == 'dense':
             datasets = run_dense_retrieval(
                 training_args,
                 model_args,
                 data_args,
                 datasets
             )
+        elif model_args.retrieval_type == 'elastic':
+            # number of texet to concat
+            datasets, scores = run_elasticsearch(training_args, data_args, datasets)
+
         # test data 폴더에 들어있는 데이터에서도 validation 으로 되어있음
         eval_dataset = datasets['validation']
         eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
@@ -560,3 +566,4 @@ def make_combined_dataset():
     valid_dataset = dataset['validation']
     combined_dataset = concatenate_datasets([train_dataset, valid_dataset])
     combined_dataset.save_to_disk('../data/combined_dataset')
+
