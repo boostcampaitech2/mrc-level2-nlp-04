@@ -414,7 +414,7 @@ def get_args():
         else:
             model_args.model_name_or_path = model_args.finetuned_mrc_model_path
       
-        data_args.dataset_name = '../data/test_dataset/'
+        data_args.dataset_name = 'basic'
         training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
 
     print(training_args)
