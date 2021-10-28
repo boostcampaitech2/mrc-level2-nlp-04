@@ -397,7 +397,7 @@ def get_args():
     assert training_args.retrieval_run_name is not None, "[Error] Retrieval run name need"
     training_args.retrieval_output_dir = os.path.join(
         training_args.retrieval_output_dir, training_args.retrieval_run_name
-
+    )
     # model_name_or_path 를 tokenizer_name 에 지정해줌
     model_args.tokenizer_name = model_args.model_name_or_path
 
