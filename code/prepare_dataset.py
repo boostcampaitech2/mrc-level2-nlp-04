@@ -69,7 +69,7 @@ def search_es(es_obj, index_name, question_text, n_results):
     return res
 
 
-def make_custom_dataset(dataset_path):
+def make_custom_dataset(dataset_path, topk=5):
     if not (os.path.isdir('../data/train_dataset') or
             os.path.isdir('../data/wikipedia_documents.json')):
         raise Exception("Set the original data path to '../data'")
@@ -129,7 +129,7 @@ def make_custom_dataset(dataset_path):
 
         es = Elasticsearch()
 
-        k = 5  # k : how many contexts to concatenate
+        k = topk  # k : how many contexts to concatenate
         for idx, train in enumerate(train_data):
             res = search_es(es, 'preprocess-wiki-index', train['question'], k)
             context_list = [(hit['_source']['document_text'], hit['_score']) for hit in res['hits']['hits']]
