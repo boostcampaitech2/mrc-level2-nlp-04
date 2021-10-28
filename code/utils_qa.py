@@ -34,7 +34,7 @@ from transformers import is_torch_available, PreTrainedTokenizerFast, HfArgument
     AutoModelForQuestionAnswering, DataCollatorWithPadding
 from transformers.trainer_utils import get_last_checkpoint, EvalPrediction
 
-from datasets import DatasetDict, load_from_disk, load_metric
+from datasets import DatasetDict, load_from_disk, load_metric, concatenate_datasets
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
@@ -325,7 +325,6 @@ def postprocess_qa_predictions(
 def check_no_error(
         data_args: DataTrainingArguments,
         training_args: TrainingArguments,
-        datasets: DatasetDict,
         tokenizer,
 ) -> Tuple[Any, int]:
     # last checkpoint 찾기.
@@ -362,8 +361,6 @@ def check_no_error(
         )
     max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
 
-    if "validation" not in datasets:
-        raise ValueError("--do_eval requires a validation dataset")
     return last_checkpoint, max_seq_length
 
 
@@ -420,7 +417,6 @@ def get_args():
             model_args.model_name_or_path = model_args.finetuned_mrc_model_path
 
         # inference 시에는 prediction 결과를 저장하는 곳이 output_dir 이 되므로 새로 지정해줌
-        assert training_args.project_name, "project_name 을 arguments.py 에서 지정해주세요!"
         training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
 
     print(training_args)
@@ -447,7 +443,7 @@ def set_seed_everything(seed):
     return None
 
 
-def get_models( model_args):
+def get_models(model_args):
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     model_config = AutoConfig.from_pretrained(
@@ -471,7 +467,7 @@ def get_models( model_args):
         )
     else:
         attached = model_args.additional_model.lower()
-        assert attached in ['lstm', 'bidaf'],\
+        assert attached in ['lstm', 'bidaf'], \
             "Available models are lstm, bidaf. (No matter letter case)"
         print("******* AttachedLSTM *******")
 
@@ -503,7 +499,7 @@ def get_data(training_args, model_args, data_args, tokenizer):
         else:
             datasets = make_custom_dataset('../data/concat_train.pkl')
     else:
-        raise ValueError ('dataset_name have to be one of ["basic", "preprocessed", "concat"]')
+        raise ValueError('dataset_name have to be one of ["basic", "preprocessed", "concat"]')
 
     print(datasets)
 
@@ -587,3 +583,11 @@ metric = load_metric("squad")
 
 def compute_metrics(p: EvalPrediction):
     return metric.compute(predictions=p.predictions, references=p.label_ids)
+
+
+def make_combined_dataset():
+    dataset = load_from_disk("../data/train_dataset/")
+    train_dataset = dataset['train']
+    valid_dataset = dataset['validation']
+    combined_dataset = concatenate_datasets([train_dataset, valid_dataset])
+    combined_dataset.save_to_disk('../data/combined_dataset')
