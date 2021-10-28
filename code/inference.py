@@ -58,7 +58,7 @@ def run_mrc(
 
     # 오류가 있는지 확인합니다.
     last_checkpoint, max_seq_length = check_no_error(
-        data_args, training_args, tokenizer
+        data_args, training_args, datasets, tokenizer
     )
     data_args.max_seq_length = max_seq_length
 

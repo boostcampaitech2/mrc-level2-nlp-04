@@ -264,7 +264,12 @@ class SparseRetrieval:
         result = query_vec * self.p_embedding.T
         if not isinstance(result, np.ndarray):
             result = result.toarray()
-
+        # doc_scores = []
+        # doc_indices = []
+        # for i in range(result.shape[0]):
+        #     sorted_result = np.argsort(result[i, :])[::-1]
+        #     doc_scores.append(result[i, :][sorted_result].tolist()[:k])
+        #     doc_indices.append(sorted_result.tolist()[:k])
 
         # 진명훈님 공유해주신 코드 적용
         doc_scores = np.partition(result, -k)[:, -k:][:, ::-1]
@@ -272,9 +277,7 @@ class SparseRetrieval:
         doc_scores = np.sort(doc_scores, axis=-1)[:, ::-1].tolist()
         doc_indices = np.argpartition(result, -k)[:, -k:][:, ::-1]
         r, c = ind.shape
-
         ind = ind + np.tile(np.arange(r).reshape(-1, 1), (1, c)) * c
-
         doc_indices = doc_indices.ravel()[ind].reshape(r, c).tolist()
         return doc_scores, doc_indices
 
