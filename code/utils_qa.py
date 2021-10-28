@@ -498,7 +498,7 @@ def get_data(training_args, model_args, data_args, tokenizer):
         else:
             datasets = make_custom_dataset(f'../data/concat_train.pkl')
     else:
-        raise ValueError('dataset_name have to be one of ["basic", "preprocessed", "concat"]')
+        raise ValueError('dataset_name have to be one of ["basic", "preprocess", "concat"]')
 
     print(datasets)
 
