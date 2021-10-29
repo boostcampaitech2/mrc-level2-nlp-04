@@ -11,8 +11,7 @@ from utils_qa import check_no_error, get_args, set_seed_everything, get_models, 
     post_processing_function, compute_metrics, make_combined_dataset
 from trainer_qa import QuestionAnsweringTrainer
 
-import pandas as pd
-from datasets import load_from_disk, concatenate_datasets, DatasetDict, Dataset
+from datasets import load_from_disk, DatasetDict, Dataset
 from sklearn.model_selection import KFold
 
 from arguments import (

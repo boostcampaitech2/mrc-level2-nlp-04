@@ -14,7 +14,7 @@ class TrainingArguments(OriginTrainingArguments):
         default='../retrieval_output',
         metadata={"help": "The output directory where the retrieval model will be written."},
     )
-    with_inference: str = field(
+    with_inference: bool = field(
         default=True,
         metadata={"help": "do train then inference"},
     )
@@ -144,8 +144,8 @@ class DataTrainingArguments:
     """
 
     dataset_name: Optional[str] = field(
-        default="../data/train_dataset",
-        metadata={"help": "The name of the dataset to use."},
+        default="basic",
+        metadata={"help": "The name of the dataset to use. ['basic', 'concat', 'preprocess']"},
     )
     overwrite_cache: bool = field(
         default=False,

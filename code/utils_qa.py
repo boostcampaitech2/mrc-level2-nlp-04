@@ -34,12 +34,13 @@ from transformers import is_torch_available, PreTrainedTokenizerFast, HfArgument
     AutoModelForQuestionAnswering, DataCollatorWithPadding
 from transformers.trainer_utils import get_last_checkpoint, EvalPrediction
 
-from datasets import load_from_disk, concatenate_datasets, DatasetDict, Dataset, load_metric
+from datasets import load_from_disk, concatenate_datasets, load_metric
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
     TrainingArguments,
 )
+from prepare_dataset import get_pickle, make_custom_dataset
 from utils_retrieval import run_sparse_retrieval, run_dense_retrieval, run_elasticsearch
 from data_processing import DataProcessor
 
@@ -413,7 +414,7 @@ def get_args():
         else:
             model_args.model_name_or_path = model_args.finetuned_mrc_model_path
       
-        data_args.dataset_name = '../data/test_dataset/'
+        data_args.dataset_name = 'basic'
         training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
 
     print(training_args)
@@ -465,8 +466,8 @@ def get_models(model_args):
         )
     else:
         attached = model_args.additional_model.lower()
-        assert attached in ['lstm', 'bidaf'],\
-            "Available models are lstm, bidaf. (No matter letter case)"
+        assert attached in ['lstm', 'bidaf', 'convolution'],\
+            "Available models are lstm, bidaf, convolution. (No matter letter case)"
         print("******* AttachedLSTM *******")
 
         if attached == 'lstm':
@@ -475,13 +476,43 @@ def get_models(model_args):
         elif attached == 'bidaf':
             from model.BiDAF.BiDAF import ModelAttachedBiDAF
             model = ModelAttachedBiDAF(model_config)
+        elif attached == 'convolution':
+            from model.CNN.convolution import RobertaConv
+            model = RobertaConv(model_config)
 
     return tokenizer, model_config, model
 
 
 def get_data(training_args, model_args, data_args, tokenizer):
     '''train, validation, test의 dataloader와 dataset를 반환하는 함수'''
-    datasets = load_from_disk(data_args.dataset_name)
+    if data_args.dataset_name == 'basic':
+        if training_args.do_train:
+            datasets = load_from_disk('../data/train_dataset')
+        elif training_args.do_predict:
+            datasets = load_from_disk('../data/test_dataset')
+    elif data_args.dataset_name == 'aug':
+        if os.path.isfile('../data/aug_train.pkl'):
+            datasets = get_pickle('../data/aug_train.pkl')
+        else:
+            datasets = make_custom_dataset('../data/aug_train.pkl')
+    elif data_args.dataset_name == 'preprocess':
+        if os.path.isfile('../data/preprocess_train.pkl'):
+            datasets = get_pickle('../data/preprocess_train.pkl')
+        else:
+            datasets = make_custom_dataset('../data/preprocess_train.pkl')
+    elif data_args.dataset_name == 'concat':
+        if os.path.isfile(f'../data/concat_train.pkl'):
+            datasets = get_pickle(f'../data/concat_train.pkl')
+        else:
+            datasets = make_custom_dataset(f'../data/concat_train.pkl')
+    elif data_args.dataset_name == 'aug_concat':
+        if os.path.isfile(f'../data/aug_concat_train.pkl'):
+            datasets = get_pickle(f'../data/aug_concat_train.pkl')
+        else:
+            datasets = make_custom_dataset(f'../data/aug_concat_train.pkl')
+    else:
+        raise ValueError('dataset_name have to be one of ["basic", "preprocess", "concat", "aug_concat"]')
+
     print(datasets)
 
     data_processor = DataProcessor(tokenizer, model_args, data_args)

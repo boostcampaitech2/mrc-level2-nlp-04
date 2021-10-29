@@ -91,6 +91,40 @@ def make_custom_dataset(dataset_path):
             new_wiki[str(ids)] = run_preprocess_to_wiki(wiki[str(ids)])
         save_data('../data/preprocess_wiki.json', new_wiki)
 
+    if not os.path.isfile('../data/aug_train.pkl'):
+        aug_train_df = pd.read_csv('../data/aug_train.csv')
+        aug_train_df['answers'] = aug_train_df['answers'].apply(lambda x: eval(x))
+        origin_dataset = load_from_disk('../data/train_dataset')
+        origin_valid_dataset = origin_dataset['validation']
+        dataset = DatasetDict({'train': Dataset.from_pandas(aug_train_df, features=train_f),
+                                   'validation': origin_valid_dataset})
+        save_pickle('../data/aug_train.pkl', dataset)
+
+        if 'aug' in dataset_path:
+            return dataset
+
+    if not os.path.isfile('../data/aug_preprocess_train.pkl'):
+        dataset = get_pickle('../data/aug_train.pkl')
+        train_dataset = dataset['train']
+        valid_dataset = dataset['validation']
+
+        new_train_data, new_valid_data = [], []
+        for data in tqdm(train_dataset):
+            new_data = run_preprocess(data)
+            new_train_data.append(new_data)
+        for data in tqdm(valid_dataset):
+            new_data = run_preprocess(data)
+            new_valid_data.append(new_data)
+
+        train_df = pd.DataFrame(new_train_data)
+        valid_df = pd.DataFrame(new_valid_data)
+        dataset = DatasetDict({'train': Dataset.from_pandas(train_df, features=train_f),
+                               'validation': Dataset.from_pandas(valid_df, features=train_f)})
+        save_pickle('../data/aug_preprocess_train.pkl', dataset)
+
+        if 'aug_preprocess' in dataset_path:
+            return dataset
+
     if not os.path.isfile('../data/preprocess_train.pkl'):
         train_dataset = load_from_disk('../data/train_dataset')['train']
         valid_dataset = load_from_disk('../data/train_dataset')['validation']
@@ -107,11 +141,64 @@ def make_custom_dataset(dataset_path):
         valid_df = pd.DataFrame(new_valid_data)
         dataset = DatasetDict({'train': Dataset.from_pandas(train_df, features=train_f),
                                'validation': Dataset.from_pandas(valid_df, features=train_f)})
-        save_pickle(dataset_path, dataset)
+        save_pickle('../data/preprocess_train.pkl', dataset)
 
         if 'preprocess' in dataset_path:
             return dataset
 
+    if 'aug_concat' in dataset_path:
+        base_dataset = get_pickle('../data/aug_preprocess_train.pkl')
+        train_dataset, valid_dataset = base_dataset['train'], base_dataset['validation']
+
+        train_data = [{'id': train_dataset[i]['id'],
+                       'question': train_dataset[i]['question'],
+                       'answers': train_dataset[i]['answers'],
+                       'context': train_dataset[i]['context']}
+                      for i in range(len(train_dataset))]
+        valid_data = [{'id': valid_dataset[i]['id'],
+                       'question': valid_dataset[i]['question'],
+                       'answers': valid_dataset[i]['answers'],
+                       'context': valid_dataset[i]['context']}
+                      for i in range(len(valid_dataset))]
+
+        es = Elasticsearch()
+
+        k = 5  # k : how many contexts to concatenate
+        for idx, train in enumerate(train_data):
+            result = search_es(es, 'preprocess-wiki-index', train['question'], k)
+            context_list = [(hit['_source']['document_text'], hit['_score']) for hit in result['hits']['hits']]
+            contexts = train['context']
+            count = 0
+            for context in context_list:
+                # if same context already exists, don't concatenate
+                if train['context'] == context[0]:
+                    continue
+                contexts += ' ' + context[0]
+                count += 1
+                if count == (k - 1):
+                    break
+            train_data[idx]['context'] = contexts
+
+        for idx, valid in enumerate(valid_dataset):
+            result = search_es(es, 'preprocess-wiki-index', valid['question'], k)
+            context_list = [(hit['_source']['document_text'], hit['_score']) for hit in result['hits']['hits']]
+            contexts = valid['context']
+            count = 0
+            for context in context_list:
+                if valid['context'] == context[0]:
+                    continue
+                contexts += ' ' + context[0]
+                count += 1
+                if count == (k - 1):
+                    break
+            valid_data[idx]['context'] = contexts
+
+        train_df = pd.DataFrame(train_data)
+        valid_df = pd.DataFrame(valid_data)
+        dataset = DatasetDict({'train': Dataset.from_pandas(train_df, features=train_f),
+                               'validation': Dataset.from_pandas(valid_df, features=train_f)})
+        save_pickle(dataset_path, dataset)
+        return dataset
     if 'concat' in dataset_path:
         base_dataset = get_pickle('../data/preprocess_train.pkl')
         train_dataset, valid_dataset = base_dataset['train'], base_dataset['validation']
@@ -131,8 +218,8 @@ def make_custom_dataset(dataset_path):
 
         k = 5  # k : how many contexts to concatenate
         for idx, train in enumerate(train_data):
-            res = search_es(es, 'wiki-index', train['question'], k)
-            context_list = [(hit['_source']['document_text'], hit['_score']) for hit in res['hits']['hits']]
+            result = search_es(es, 'preprocess-wiki-index', train['question'], k)
+            context_list = [(hit['_source']['document_text'], hit['_score']) for hit in result['hits']['hits']]
             contexts = train['context']
             count = 0
             for context in context_list:
@@ -146,8 +233,8 @@ def make_custom_dataset(dataset_path):
             train_data[idx]['context'] = contexts
 
         for idx, valid in enumerate(valid_dataset):
-            res = search_es(es, 'wiki-index', valid['question'], k)
-            context_list = [(hit['_source']['document_text'], hit['_score']) for hit in res['hits']['hits']]
+            result = search_es(es, 'preprocess-wiki-index', valid['question'], k)
+            context_list = [(hit['_source']['document_text'], hit['_score']) for hit in result['hits']['hits']]
             contexts = valid['context']
             count = 0
             for context in context_list:
