@@ -466,8 +466,8 @@ def get_models(model_args):
         )
     else:
         attached = model_args.additional_model.lower()
-        assert attached in ['lstm', 'bidaf'],\
-            "Available models are lstm, bidaf. (No matter letter case)"
+        assert attached in ['lstm', 'bidaf', 'convolution'],\
+            "Available models are lstm, bidaf, convolution. (No matter letter case)"
         print("******* AttachedLSTM *******")
 
         if attached == 'lstm':
@@ -476,6 +476,9 @@ def get_models(model_args):
         elif attached == 'bidaf':
             from model.BiDAF.BiDAF import ModelAttachedBiDAF
             model = ModelAttachedBiDAF(model_config)
+        elif attached == 'convolution':
+            from model.CNN.convolution import RobertaConv
+            model = RobertaConv(model_config)
 
     return tokenizer, model_config, model
 
@@ -496,7 +499,7 @@ def get_data(training_args, model_args, data_args, tokenizer):
         if os.path.isfile('../data/preprocess_train.pkl'):
             datasets = get_pickle('../data/preprocess_train.pkl')
         else:
-            datasets = make_custom_dataset('../data/preprocess_tain.pkl')
+            datasets = make_custom_dataset('../data/preprocess_train.pkl')
     elif data_args.dataset_name == 'concat':
         if os.path.isfile(f'../data/concat_train.pkl'):
             datasets = get_pickle(f'../data/concat_train.pkl')
@@ -508,7 +511,7 @@ def get_data(training_args, model_args, data_args, tokenizer):
         else:
             datasets = make_custom_dataset(f'../data/aug_concat_train.pkl')
     else:
-        raise ValueError('dataset_name have to be one of ["basic", "preprocess", "concat"]')
+        raise ValueError('dataset_name have to be one of ["basic", "preprocess", "concat", "aug_concat"]')
 
     print(datasets)
 
