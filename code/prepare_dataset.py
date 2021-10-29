@@ -91,6 +91,18 @@ def make_custom_dataset(dataset_path):
             new_wiki[str(ids)] = run_preprocess_to_wiki(wiki[str(ids)])
         save_data('../data/preprocess_wiki.json', new_wiki)
 
+    if not os.path.isfile('../data/aug_train.pkl'):
+        aug_train_df = pd.read_csv('../data/aug_train.csv')
+        aug_train_df['answers'] = aug_train_df['answers'].apply(lambda x: eval(x))
+        origin_dataset = load_from_disk('../data/train_dataset')
+        origin_valid_dataset = origin_dataset['validation']
+        dataset = DatasetDict({'train': Dataset.from_pandas(aug_train_df, features=train_f),
+                                   'validation': origin_valid_dataset})
+        save_pickle('../data/aug_train.pkl', dataset)
+
+        if 'aug' in dataset_path:
+            return dataset
+
     if not os.path.isfile('../data/preprocess_train.pkl'):
         train_dataset = load_from_disk('../data/train_dataset')['train']
         valid_dataset = load_from_disk('../data/train_dataset')['validation']
@@ -107,7 +119,7 @@ def make_custom_dataset(dataset_path):
         valid_df = pd.DataFrame(new_valid_data)
         dataset = DatasetDict({'train': Dataset.from_pandas(train_df, features=train_f),
                                'validation': Dataset.from_pandas(valid_df, features=train_f)})
-        save_pickle(dataset_path, dataset)
+        save_pickle('../data/preprocess_train.pkl', dataset)
 
         if 'preprocess' in dataset_path:
             return dataset

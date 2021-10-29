@@ -487,6 +487,11 @@ def get_data(training_args, model_args, data_args, tokenizer):
             datasets = load_from_disk('../data/train_dataset')
         elif training_args.do_predict:
             datasets = load_from_disk('../data/test_dataset')
+    elif data_args.dataset_name == 'aug':
+        if os.path.isfile('../data/aug_train.pkl'):
+            datasets = get_pickle('../data/aug_train.pkl')
+        else:
+            datasets = make_custom_dataset('../data/aug_train.pkl')
     elif data_args.dataset_name == 'preprocess':
         if os.path.isfile('../data/preprocess_train.pkl'):
             datasets = get_pickle('../data/preprocess_train.pkl')
