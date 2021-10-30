@@ -20,15 +20,15 @@ class TrainingArguments(OriginTrainingArguments):
     )
     project_name: str = field(
         # PR 하실때는 None 으로 바꿔서 올려주세요! 얘의 목적은 wandb project name 설정을 위함입니다.
-        default=None,
+        default="dpr_retrieval_test",
         metadata={"help": "wandb project name"},
     )
     run_name: Optional[str] = field(
-        default='exp',
+        default='roberta-small_elastic_sequential_bs16',
         metadata={"help": "wandb run name"},
     )
     retrieval_run_name: Optional[str] = field(
-        default='bert-base',  # 이게 제일 성능이 좋았음
+        default='roberta-small_elastic_bs16',  # 이게 제일 성능이 좋았음
         metadata={"help": "retrieval encoder model folder name"},
     )
     evaluation_strategy: IntervalStrategy = field(
@@ -119,19 +119,19 @@ class ModelArguments:
         },
     )
     retrieval_model_name_or_path: str = field(
-        default="klue/bert-base",  # 이게 성능이 제일 좋았음
+        default="klue/roberta-small",  # 이게 성능이 제일 좋았음
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
     )
     use_trained_model: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "whether using fine-tuned retrieval model"
         },
     )
     retrieval_type: str = field(
-        default='elastic',
+        default='sequential',
         metadata={"help": "Choose run passage retrieval using sparse or dense or both embedding"
                           "ex. sparse, dense, both(예정 BM25 + dense), elastic"},
     )

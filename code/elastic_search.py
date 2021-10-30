@@ -101,7 +101,7 @@ class ElasticSearchRetrieval:
 
         for i, rec in enumerate(tqdm(evidence_corpus)):
             try:
-                es_obj.index(index=index_name, id=i, document=rec)
+                es_obj.index(index=index_name, id=i, body=rec)
             except:
                 print(f'Unable to load document {i}.')
 
@@ -139,14 +139,15 @@ class ElasticSearchRetrieval:
 
         return df, scores
 
-    def elastic_retrieval(self, question_text):
-        result = self.search_es(question_text)
+    def elastic_retrieval(self, question_text, topk=None):
+        result = self.search_es(question_text, topk)
         # 매칭된 context만 list형태로 만든다.
         context_list = [hit['_source']['document_text'] for hit in result['hits']['hits']]
         score_list = [hit['_score'] for hit in result['hits']['hits']]
-        return context_list, score_list
+        id_list = [int(hit['_id']) for hit in result['hits']['hits']] # 추가하였습니다
+        return context_list, score_list, id_list
 
-    def search_es(self, question_text):
+    def search_es(self, question_text, topk):
         query = {
             'query': {
                 'match': {
@@ -154,5 +155,5 @@ class ElasticSearchRetrieval:
                 }
             }
         }
-        result = self.es.search(index=self.index_name, body=query, size=self.k)
+        result = self.es.search(index=self.index_name, body=query, size=self.k if topk is None else topk)
         return result
