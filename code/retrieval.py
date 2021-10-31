@@ -6,6 +6,9 @@ import pickle
 import numpy as np
 import pandas as pd
 
+from rank_bm25 import BM25Okapi   # pip install rank_bm25
+from konlpy.tag import Mecab   # Mecab 설치
+
 from tqdm.auto import tqdm
 from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
@@ -30,6 +33,7 @@ class SparseRetrieval:
     def __init__(
             self,
             tokenize_fn,
+            tokenizer_name,
             data_path: Optional[str] = "../data/",
             context_path: Optional[str] = "wikipedia_documents.json",
     ) -> NoReturn:
@@ -71,11 +75,16 @@ class SparseRetrieval:
             ngram_range=(1, 2),
             max_features=50000,
         )
+        self.tokenizer_name = tokenizer_name
 
-        self.p_embedding = self.get_sparse_embedding()  # get_sparse_embedding()로 생성합니다
+        self.bm25 = BM25Okapi
+        self.bm25_tokenizer = Mecab().morphs
+        self.bm25_embedding = None
+
+        self.p_embedding = None  # get_sparse_embedding()로 생성합니다   # run_sparse_retriever에서 get_sparse_embedding 해주는데?
         self.indexer = None  # build_faiss()로 생성합니다.
 
-    def get_sparse_embedding(self) -> NoReturn:
+    def get_sparse_embedding(self, bm25:Optional[bool]=False) -> NoReturn:
 
         """
         Summary:
@@ -85,25 +94,44 @@ class SparseRetrieval:
         """
 
         # Pickle을 저장합니다.
-        pickle_name = f"sparse_embedding.bin"
-        tfidfv_name = f"tfidfv.bin"
+        pickle_name = f"sparse_embedding_{self.tokenizer_name.split('/')[-1]}.bin"
+        tfidfv_name = f"tfidfv_{self.tokenizer_name.split('/')[-1]}.bin"
+        bm25_pickle_name = f"bm25_embedding.bin"
+        bm25_name = f"bm25.bin"
         emd_path = os.path.join(self.data_path, pickle_name)
         tfidfv_path = os.path.join(self.data_path, tfidfv_name)
+        bm25_emd_path = os.path.join(self.data_path, bm25_pickle_name)
+        bm25_path = os.path.join(self.data_path, bm25_name)
 
-        if os.path.isfile(emd_path) and os.path.isfile(tfidfv_path):
-            with open(emd_path, "rb") as file:
-                self.p_embedding = pickle.load(file)
-            with open(tfidfv_path, "rb") as file:
-                self.tfidfv = pickle.load(file)
+        if os.path.isfile(emd_path) if not bm25 else os.path.isfile(bm25_emd_path) \
+            and os.path.isfile(tfidfv_path) if not bm25 else os.path.isfile(bm25_path):
+            with open(emd_path if not bm25 else bm25_emd_path, "rb") as file:
+                if not bm25:
+                    self.p_embedding = pickle.load(file)
+                else:
+                    self.bm25_embedding = pickle.load(file)
+            with open(tfidfv_path if not bm25 else bm25_path, "rb") as file:
+                if not bm25:
+                    self.tfidfv = pickle.load(file)
+                else:
+                    self.bm25 = pickle.load(file)
             print("Embedding pickle load.")
         else:
             print("Build passage embedding")
-            self.p_embedding = self.tfidfv.fit_transform(self.contexts)
-            print(self.p_embedding.shape)
-            with open(emd_path, "wb") as file:
-                pickle.dump(self.p_embedding, file)
-            with open(tfidfv_path, "wb") as file:
-                pickle.dump(self.tfidfv, file)
+            if not bm25:
+                self.p_embedding = self.tfidfv.fit_transform(self.contexts)
+                print(self.p_embedding.shape)
+                with open(emd_path, "wb") as file:
+                    pickle.dump(self.p_embedding, file)
+                with open(tfidfv_path, "wb") as file:
+                    pickle.dump(self.tfidfv, file)
+            else:
+                tokenized_contexts = [self.bm25_tokenizer(context) for context in self.contexts]
+                self.bm25_embedding = self.bm25(tokenized_contexts)
+                with open(bm25_emd_path, "wb") as file:
+                    pickle.dump(self.bm25_embedding, file)
+                with open(bm25_path, "wb") as file:
+                    pickle.dump(self.bm25, file)
             print("Embedding pickle saved.")
 
     def build_faiss(self, num_clusters=64) -> NoReturn:
@@ -145,7 +173,7 @@ class SparseRetrieval:
 
     def retrieve(
             self, query_or_dataset: Union[str, Dataset],
-            topk: Optional[int] = 1,  # use_faiss: bool,
+            bm25: Optional[bool]=False, topk: Optional[int] = 1,  # use_faiss: bool,
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -172,8 +200,10 @@ class SparseRetrieval:
 
         if isinstance(query_or_dataset, str):
             doc_scores, doc_indices = (
-                self.get_relevant_doc(query_or_dataset, k=topk)
+                self.get_relevant_doc(query_or_dataset, bm25=bm25, k=topk)
             )
+            doc_scores, doc_indices = doc_scores[0], doc_indices[0]
+
             print("[Search query]\n", query_or_dataset, "\n")
 
             for i in range(topk):
@@ -187,8 +217,8 @@ class SparseRetrieval:
             # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
             total = []
             with timer("query exhaustive search"):
-                doc_scores, doc_indices = self.get_relevant_doc_bulk(
-                    query_or_dataset["question"], k=topk
+                doc_scores, doc_indices = self.get_relevant_doc(
+                    query_or_dataset["question"], bm25=bm25, k=topk
                 )
             for idx, example in enumerate(
                     tqdm(query_or_dataset, desc="Sparse retrieval: ")
@@ -213,57 +243,36 @@ class SparseRetrieval:
             return cqas
 
     def get_relevant_doc(
-            self, query: str, k: Optional[int] = 1
+            self, queries, bm25: Optional[bool]=False, k: Optional[int] = 1
     ) -> Tuple[List, List]:
 
         """
         Arguments:
-            query (str):
-                하나의 Query를 받습니다.
+            queries (str or List):
+                하나 또는 여러개의 Query를 받습니다.
             k (Optional[int]): 1
                 상위 몇 개의 Passage를 반환할지 정합니다.
         Note:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
 
-        with timer("transform"):
-            query_vec = self.tfidfv.transform([query])
-        assert (
-                np.sum(query_vec) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+        if not bm25:
+            query_vec = self.tfidfv.transform([query] if isinstance(query, str) else queries)
+            assert (
+                    np.sum(query_vec) != 0
+            ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
 
-        with timer("query ex search"):
             result = query_vec * self.p_embedding.T
+
+        else:
+            query_vec = self.bm25_tokenizer(query) if isinstance(query, str) else [self.bm25_tokenizer(q) for q in query]
+            if isinstance(query, str):
+                result = [self.bm25_embedding.get_scores(query_vec)]
+            elif isinstance(query, list):
+                result = [self.bm25_embedding.get_scores(q) for q in query_vec]
+
         if not isinstance(result, np.ndarray):
-            result = result.toarray()
-
-        sorted_result = np.argsort(result.squeeze())[::-1]
-        doc_score = result.squeeze()[sorted_result].tolist()[:k]
-        doc_indices = sorted_result.tolist()[:k]
-        return doc_score, doc_indices
-
-    def get_relevant_doc_bulk(
-            self, queries: List, k: Optional[int] = 1
-    ) -> Tuple[List, List]:
-
-        """
-        Arguments:
-            queries (List):
-                하나의 Query를 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        Note:
-            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
-        """
-
-        query_vec = self.tfidfv.transform(queries)
-        assert (
-                np.sum(query_vec) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
-
-        result = query_vec * self.p_embedding.T
-        if not isinstance(result, np.ndarray):
-            result = result.toarray()
+            result = np.array(result) if bm25 else result.toarray()
 
 
         # 진명훈님 공유해주신 코드 적용
@@ -417,6 +426,7 @@ if __name__ == "__main__":
         "--context_path", default="wikipedia_documents.json", type=str, help=""
     )
     parser.add_argument("--use_faiss", default=False, type=bool, help="")
+    parser.add_argument("--topk", default=1, type=int, help="")
 
     args = parser.parse_args()
 
@@ -444,7 +454,9 @@ if __name__ == "__main__":
         context_path=args.context_path,
     )
 
-    query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
+    idx = np.random.randint(0, len(full_ds["question"]))
+    query = full_ds["question"][idx]
+    single_query_context = full_ds["context"][idx]
 
     if args.use_faiss:
         retriever.build_faiss()
@@ -461,13 +473,23 @@ if __name__ == "__main__":
             print("correct retrieval result by faiss", df["correct"].sum() / len(df))
 
     else:
+        retriever.get_sparse_embedding()
         with timer("bulk query by exhaustive search"):
-            df = retriever.retrieve(full_ds)
-            df["correct"] = df["original_context"] == df["context"]
+            def topk_experiment(topk_list):
+                result_dict = {}
+                for topk in tqdm(topk_list):
+                    result_retriever = retriever.retrieve(full_ds, topk)
+                    correct = 0
+                    for idx in range(len(result_retriever)):
+                        if result_retriever["original_context"][idx] in result_retriever["context"][idx]:
+                            correct += 1
+                    result_dict[topk] = correct/len(result_retriever)
+                return result_dict
+
             print(
                 "correct retrieval result by exhaustive search",
-                df["correct"].sum() / len(df),
+                topk_experiment(topk_list=[5, 10, 30, 50, 100])
             )
 
         with timer("single query by exhaustive search"):
-            scores, indices = retriever.retrieve(query)
+            scores, indices = retriever.retrieve(query, args.topk)

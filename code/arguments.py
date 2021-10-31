@@ -200,3 +200,6 @@ class DataTrainingArguments:
         metadata={
             "help": "Elastic search index name[wiki-index]"}
     )
+    bm25: bool = field(
+        default=False, metadata={"help": "Whether to score with bm25 instead of tfidf"}
+    )
