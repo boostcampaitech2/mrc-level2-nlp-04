@@ -68,7 +68,7 @@ class TrainingArguments(OriginTrainingArguments):
         metadata={"help": "Whether to use 16-bit (mixed) precision instead of 32-bit"},
     )
     save_total_limit: Optional[int] = field(
-        default=2,
+        default=1,
         metadata={
             "help": (
                 "Limit the total amount of checkpoints."
