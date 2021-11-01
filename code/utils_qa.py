@@ -466,8 +466,8 @@ def get_models(model_args):
         )
     else:
         attached = model_args.additional_model.lower()
-        assert attached in ['lstm', 'bidaf', 'convolution'],\
-            "Available models are lstm, bidaf, convolution. (No matter letter case)"
+        assert attached in ['lstm', 'bidaf', 'convolution', 'qa_conv', 'qa_conv_ver2'],\
+            "Available models are lstm, bidaf, convolution, qa_conv, qa_conv_ver2. (No matter letter case)"
         print("******* AttachedLSTM *******")
 
         if attached == 'lstm':
@@ -478,7 +478,13 @@ def get_models(model_args):
             model = ModelAttachedBiDAF(model_config)
         elif attached == 'convolution':
             from model.CNN.convolution import RobertaConv
-            model = RobertaConv(model_config)
+            model = RobertaConv.from_pretrained(model_args.model_name_or_path)
+        elif attached == 'qa_conv':
+            from model.QACNN.qaconvolution import RobertaQAConv
+            model = RobertaQAConv.from_pretrained(model_args.model_name_or_path)
+        elif attached == 'qa_conv_ver2':
+            from model.QACNN.qaconvolution_ver2 import RobertaQAConv_ver2
+            model = RobertaQAConv_ver2.from_pretrained(model_args.model_name_or_path)
 
     return tokenizer, model_config, model
 
@@ -510,8 +516,13 @@ def get_data(training_args, model_args, data_args, tokenizer):
             datasets = get_pickle(f'../data/aug_concat_train.pkl')
         else:
             datasets = make_custom_dataset(f'../data/aug_concat_train.pkl')
+    elif data_args.dataset_name == 'random_concat':
+        if os.path.isfile(f'../data/random_concat_train.pkl'):
+            datasets = get_pickle(f'../data/random_concat_train.pkl')
+        else:
+            datasets = make_custom_dataset(f'../data/random_concat_train.pkl')
     else:
-        raise ValueError('dataset_name have to be one of ["basic", "preprocess", "concat", "aug_concat"]')
+        raise ValueError('dataset_name have to be one of ["basic", "preprocess", "concat", "aug_concat", "random_concat"]')
 
     print(datasets)
 
@@ -591,10 +602,15 @@ def compute_metrics(p: EvalPrediction):
     return metric.compute(predictions=p.predictions, references=p.label_ids)
 
 
-def make_combined_dataset():
-    dataset = load_from_disk("../data/train_dataset/")
-    train_dataset = dataset['train']
-    valid_dataset = dataset['validation']
+def make_combined_dataset(data_args, dataset_path):
+    if data_args.dataset_name == 'concat':
+        dataset = get_pickle('../data/concat_train.pkl')
+        train_dataset = dataset['train']
+        valid_dataset = dataset['validation']
+    else:
+        dataset = load_from_disk("../data/train_dataset/")
+        train_dataset = dataset['train']
+        valid_dataset = dataset['validation']
     combined_dataset = concatenate_datasets([train_dataset, valid_dataset])
-    combined_dataset.save_to_disk('../data/combined_dataset')
+    combined_dataset.save_to_disk(dataset_path)
 

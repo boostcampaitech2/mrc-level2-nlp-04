@@ -84,8 +84,15 @@ def main():
         origin_output_dir = training_args.output_dir
 
         if not os.path.isdir('../data/combined_dataset'):
-            make_combined_dataset()
-        combined_datasets = load_from_disk('../data/combined_dataset')
+            make_combined_dataset(data_args, '../data/combined_dataset')
+        if not os.path.isdir('../data/concat_combined_dataset'):
+            make_combined_dataset(data_args, '../data/concat_combined_dataset')
+
+        if data_args.dataset_name == 'concat':
+            combined_datasets = load_from_disk('../data/concat_combined_dataset')
+        else:
+            combined_datasets = load_from_disk('../data/combined_dataset')
+
         kf = KFold(n_splits=5, random_state=training_args.seed, shuffle=True)
         for idx, (train_index, valid_index) in enumerate(kf.split(combined_datasets), 1):
             train_dataset, eval_dataset = map(Dataset.from_dict, [combined_datasets[train_index], combined_datasets[valid_index]])
@@ -94,7 +101,7 @@ def main():
             train_dataset = data_processor.train_tokenizer(train_dataset, train_dataset.column_names)
             eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
 
-            _, _, model = get_models(training_args, model_args)
+            _, _, model = get_models(model_args)
 
             training_args.output_dir = origin_output_dir + f'/{idx}'
             print(f"####### start training on fold {idx} #######")
@@ -128,6 +135,7 @@ def main():
                         + (f" --additional_model {model_args.additional_model}"
                            if model_args.additional_model is not None else '')
                         + f' --top_k_retrieval {data_args.top_k_retrieval}'
+                        + ' --elastic_index_name preprocess-wiki-index'
                 )
                 print(f"####### fold {k} inference start automatically #######")
                 os.system(string)
