@@ -3,6 +3,7 @@ import os
 import pickle
 import re
 
+import numpy as np
 import pandas as pd
 from datasets import Features, Sequence, Value, load_from_disk, DatasetDict, Dataset
 from elasticsearch import Elasticsearch
@@ -199,7 +200,72 @@ def make_custom_dataset(dataset_path):
                                'validation': Dataset.from_pandas(valid_df, features=train_f)})
         save_pickle(dataset_path, dataset)
         return dataset
-    if 'concat' in dataset_path:
+    elif 'random_concat' in dataset_path:
+        base_dataset = get_pickle('../data/preprocess_train.pkl')
+        train_dataset, valid_dataset = base_dataset['train'], base_dataset['validation']
+
+        train_data = [{'id': train_dataset[i]['id'],
+                       'question': train_dataset[i]['question'],
+                       'answers': train_dataset[i]['answers'],
+                       'context': train_dataset[i]['context']}
+                      for i in range(len(train_dataset))]
+        valid_data = [{'id': valid_dataset[i]['id'],
+                       'question': valid_dataset[i]['question'],
+                       'answers': valid_dataset[i]['answers'],
+                       'context': valid_dataset[i]['context']}
+                      for i in range(len(valid_dataset))]
+
+        es = Elasticsearch()
+
+        k = 5  # k : how many contexts to concatenate
+        for idx, train in enumerate(train_data):
+            result = search_es(es, 'preprocess-wiki-index', train['question'], k)
+            context_list = [(hit['_source']['document_text'], hit['_score']) for hit in result['hits']['hits']]
+            contexts = train['context']
+            start_idx = train['answers']['answer_start'][0]
+            count = 0
+            for context in context_list:
+                # if same context already exists, don't concatenate
+                if train['context'] == context[0]:
+                    continue
+                if np.random.uniform() < 0.5:
+                    contexts = context[0] + ' ' + contexts
+                    start_idx += len(context[0]) + 1
+                else:
+                    contexts += ' ' + context[0]
+                count += 1
+                if count == (k - 1):
+                    break
+            train_data[idx]['context'] = contexts
+            train_data[idx]['answers']['answer_start'][0] = start_idx
+
+        for idx, valid in enumerate(valid_dataset):
+            result = search_es(es, 'preprocess-wiki-index', valid['question'], k)
+            context_list = [(hit['_source']['document_text'], hit['_score']) for hit in result['hits']['hits']]
+            contexts = valid['context']
+            start_idx = valid['answers']['answer_start'][0]
+            count = 0
+            for context in context_list:
+                if valid['context'] == context[0]:
+                    continue
+                if np.random.uniform() < 0.5:
+                    contexts = context[0] + ' ' + contexts
+                    start_idx += len(context[0]) + 1
+                else:
+                    contexts += ' ' + context[0]
+                count += 1
+                if count == (k - 1):
+                    break
+            valid_data[idx]['context'] = contexts
+            valid_data[idx]['answers']['answer_start'][0] = start_idx
+
+        train_df = pd.DataFrame(train_data)
+        valid_df = pd.DataFrame(valid_data)
+        dataset = DatasetDict({'train': Dataset.from_pandas(train_df, features=train_f),
+                               'validation': Dataset.from_pandas(valid_df, features=train_f)})
+        save_pickle(dataset_path, dataset)
+        return dataset
+    elif 'concat' in dataset_path:
         base_dataset = get_pickle('../data/preprocess_train.pkl')
         train_dataset, valid_dataset = base_dataset['train'], base_dataset['validation']
 

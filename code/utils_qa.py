@@ -516,6 +516,11 @@ def get_data(training_args, model_args, data_args, tokenizer):
             datasets = get_pickle(f'../data/aug_concat_train.pkl')
         else:
             datasets = make_custom_dataset(f'../data/aug_concat_train.pkl')
+    elif data_args.dataset_name == 'random_concat':
+        if os.path.isfile(f'../data/random_concat_train.pkl'):
+            datasets = get_pickle(f'../data/random_concat_train.pkl')
+        else:
+            datasets = make_custom_dataset(f'../data/random_concat_train.pkl')
     else:
         raise ValueError('dataset_name have to be one of ["basic", "preprocess", "concat", "aug_concat"]')
 
