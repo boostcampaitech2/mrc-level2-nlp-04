@@ -24,7 +24,7 @@ class ElasticSearchRetrieval:
         self.index_name = data_args.elastic_index_name
         self.k = data_args.top_k_retrieval
 
-        self.es = Elasticsearch()
+        self.es = Elasticsearch("http://localhost:9200", timeout=30, max_retries=10, retry_on_timeout=True)
 
         if not self.es.indices.exists(self.index_name):
             self.qa_records, self.wiki_articles = self.set_datas()
