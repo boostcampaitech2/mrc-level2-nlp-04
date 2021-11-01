@@ -95,8 +95,6 @@ def main():
 
         kf = KFold(n_splits=5, random_state=training_args.seed, shuffle=True)
         for idx, (train_index, valid_index) in enumerate(kf.split(combined_datasets), 1):
-            if idx < 5:
-                continue
             train_dataset, eval_dataset = map(Dataset.from_dict, [combined_datasets[train_index], combined_datasets[valid_index]])
             datasets = DatasetDict({'train' : train_dataset, 'validation' : eval_dataset})
 
