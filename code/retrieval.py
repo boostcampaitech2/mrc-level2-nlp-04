@@ -243,7 +243,7 @@ class SparseRetrieval:
             return cqas
 
     def get_relevant_doc(
-            self, queries, bm25: Optional[bool]=False, k: Optional[int] = 1
+            self, query, bm25: Optional[bool]=False, k: Optional[int] = 1
     ) -> Tuple[List, List]:
 
         """
