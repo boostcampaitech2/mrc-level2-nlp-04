@@ -126,6 +126,7 @@ def main():
                 + f' --top_k_retrieval {data_args.top_k_retrieval}'
                 + (f' --bm25 {data_args.bm25}'
                    if data_args.bm25 == True else '')
+                + f' --retriever_type {model_args.retrieval_type}'
             )
             print(f"####### inference start automatically #######")
             os.system(string)
