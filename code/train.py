@@ -9,7 +9,7 @@ from transformers import EarlyStoppingCallback
 
 from utils_qa import check_no_error, get_args, set_seed_everything, get_models, get_data, \
     post_processing_function, compute_metrics, make_combined_dataset
-from trainer_qa import QuestionAnsweringTrainer
+from trainer_qa import QuestionAnsweringTrainer, GenerationModelTrainer
 
 from datasets import load_from_disk, DatasetDict, Dataset
 from sklearn.model_selection import KFold
@@ -167,18 +167,23 @@ def run_mrc(
                )
 
     # Trainer 초기화
-    trainer = QuestionAnsweringTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=eval_dataset if training_args.do_eval else None,
-        eval_examples=datasets["validation"] if training_args.do_eval else None,
-        tokenizer=tokenizer,
-        data_collator=data_collator,
-        post_process_function=post_processing_function,
-        compute_metrics=compute_metrics,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=training_args.early_stopping_patience)],  # early stopping
-    )
+    if not training_args.gen_model:
+        trainer = QuestionAnsweringTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset if training_args.do_train else None,
+            eval_dataset=eval_dataset if training_args.do_eval else None,
+            eval_examples=datasets["validation"] if training_args.do_eval else None,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+            post_process_function=post_processing_function,
+            compute_metrics=compute_metrics,
+            callbacks=[EarlyStoppingCallback(early_stopping_patience=training_args.early_stopping_patience)],  # early stopping
+        )
+    else:
+        trainer = GenerationModelTrainer(
+            
+        )
 
     # Training
     if training_args.do_train:
