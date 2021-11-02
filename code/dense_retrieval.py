@@ -22,6 +22,9 @@ from transformers import AutoConfig, AutoTokenizer
 from model.Retrieval_Encoder.retrieval_encoder import RetrievalEncoder
 from elastic_search import ElasticSearchRetrieval
 
+import pickle
+import json
+
 @contextmanager
 def timer(name):
     t0 = time.time()
@@ -39,7 +42,7 @@ class DenseRetrieval:
         self.tokenizer = tokenizer
         self.p_encoder = p_encoder
         self.q_encoder = q_encoder
-        self.num_neg = num_neg
+        self.num_neg = training_args.num_neg
 
         self.data_path = data_path
         self.context_path = context_path
@@ -65,7 +68,11 @@ class DenseRetrieval:
         original_context_sets = elasticsearch_result['original_context'].tolist()
         elastic_context_sets = elasticsearch_result['context'].tolist()
 
+
+        # TODO 전처리 문제의 해결을 위해서 train dataset은 preprocess_train.pkl을 이용하고 wiki는 process_wiki.json을 이용하자
+
         for original_target, elastic_target in zip(original_context_sets, elastic_context_sets):
+            count = 0
             filter_index = -1
             # TODO 정답을 항상 맨 처음에다가 놔두면 학습에 어느정도 안 좋은 영향을 주지 않을까?
             p_with_neg.append(original_target)
@@ -75,13 +82,22 @@ class DenseRetrieval:
                 if original_target in elastic_target[index]:
                     filter_index = index
                     break
+                if index == len(elastic_target) -1:
+                    filter_index = index
 
             # 위에서 찾은 index를 기준으로 slicing하여 append해준다.
             p_with_neg.extend(elastic_target[0:filter_index])
+            count += filter_index
 
             # 그러나 filter_index가 마지막 인덱스이면 그 이후부분은 추가해주지 않아도 되고 해주면 out of range 에러가 날 수 있기 때문에 이것을 위한 if문을 사용
-            if filter_index != self.num_neg:
-                p_with_neg.extend(elastic_target[filter_index+1:-1])
+            if filter_index != len(elastic_target)-1:
+                p_with_neg.extend(elastic_target[filter_index+1:])
+                count += len(elastic_target) - filter_index - 1
+
+            if count > self.num_neg:
+                print('에러 발생')
+                exit()
+
 
         # TODO p_with_neg의 결과(형태)가 어떤지 디버깅을 잘 확인하기 -> 원하는 형태 : 1차원으로 나와야 된다.
         return p_with_neg
@@ -160,9 +176,31 @@ class DenseRetrieval:
         eval_dataset = datasets['validation']
 
         if self.model_args.use_negative_sampling:
-            negative_sampling_dataset = self.get_negative_sampling(train_dataset)
+            with open('../data/preprocess_train.pkl', 'rb') as f:
+                preprocess_train = pickle.load(f)
+
+            negative_sampling_dataset = self.get_negative_sampling(preprocess_train['train'])
 
             # TODO 가져온 negative_samplin_dataset을 가지고 train_q_seqs,train_p_seqs 만들기
+
+            train_q_seqs = self.tokenizer(
+                preprocess_train['train']["question"],
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt"
+            )
+            train_p_seqs = self.tokenizer(
+                negative_sampling_dataset,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt"
+            )
+
+            max_len = train_p_seqs["input_ids"].size(-1)
+            train_p_seqs["input_ids"] = train_p_seqs["input_ids"].view(-1, self.num_neg + 1, max_len)
+            train_p_seqs["attention_mask"] = train_p_seqs["attention_mask"].view(-1, self.num_neg + 1, max_len)
+            if 'roberta' not in self.model_args.retrieval_model_name_or_path:
+                train_p_seqs["token_type_ids"] = train_p_seqs["token_type_ids"].view(-1, self.num_neg + 1, max_len)
 
         else:
             train_q_seqs = self.tokenizer(

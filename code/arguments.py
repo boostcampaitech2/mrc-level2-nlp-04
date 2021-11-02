@@ -80,6 +80,15 @@ class TrainingArguments(OriginTrainingArguments):
     save_steps: int = field(default=100, metadata={"help": "Save checkpoint every X updates steps."})
     early_stopping_patience: int = field(default=7, metadata={"help": "early_stopping_patience."})
     fold: bool = field(default=False, metadata={"help": "SET 5-Fold or not"})
+    num_neg: int = field(
+        default=2,
+        metadata={
+            "help": (
+                "Limit the total amount of checkpoints."
+                "Deletes the older checkpoints in the output_dir. Default is unlimited checkpoints"
+            )
+        },
+    )
 
 
 @dataclass
@@ -135,7 +144,11 @@ class ModelArguments:
         metadata={"help": "Choose run passage retrieval using sparse or dense or both embedding"
                           "ex. sparse, dense, both(예정 BM25 + dense), elastic"},
     )
-
+    use_negative_sampling: bool = field(
+        default=False,
+        metadata={"help": "Choose run passage retrieval using sparse or dense or both embedding"
+                          "ex. sparse, dense, both(예정 BM25 + dense), elastic"},
+    )
 
 @dataclass
 class DataTrainingArguments:

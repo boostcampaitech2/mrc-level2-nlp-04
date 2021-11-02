@@ -9,7 +9,7 @@ from torch import nn
 from torch.cuda.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
-from transformers import AdamW
+from transformers import AdamW, get_linear_schedule_with_warmup
 
 from dense_retrieval import DenseRetrieval
 from utils_retrieval import get_encoders
@@ -59,11 +59,35 @@ def training_per_step(training_args, model_args, batch, p_encoder, q_encoder, cr
 
         # TODO random sampling방식은 기존의 p_inputs와 shape이 다르므로 이 부분을 따로 분기를 만들어줘서 shape을 바꿔줘야 한다.
 
-        if 'roberta' in model_args.retrieval_model_name_or_path:
+        if 'roberta' in model_args.retrieval_model_name_or_path and not model_args.use_negative_sampling:
             p_inputs = {'input_ids': batch[0],
                         'attention_mask': batch[1]}
             q_inputs = {'input_ids': batch[2],
                         'attention_mask': batch[3]}
+        elif model_args.use_negative_sampling:
+            if 'roberta' in model_args.retrieval_model_name_or_path:
+                p_inputs = {
+                    "input_ids": batch[0].view(
+                        training_args.per_device_retrieval_train_batch_size * (training_args.num_neg + 1), -1),
+                    "attention_mask": batch[1].view(
+                        training_args.per_device_retrieval_train_batch_size * (training_args.num_neg + 1), -1),
+                }
+                q_inputs = {
+                    "input_ids": batch[2],
+                    "attention_mask": batch[3],
+                }
+            else:
+                p_inputs = {
+                    "input_ids": batch[0].view(training_args.per_device_retrieval_train_batch_size * (training_args.num_neg + 1), -1),
+                    "attention_mask": batch[1].view(training_args.per_device_retrieval_train_batch_size * (training_args.num_neg + 1), -1),
+                    "token_type_ids": batch[2].view(training_args.per_device_retrieval_train_batch_size * (training_args.num_neg + 1), -1)
+                }
+
+                q_inputs = {
+                    "input_ids": batch[3],
+                    "attention_mask": batch[4],
+                    "token_type_ids": batch[5]
+                }
         else:
             p_inputs = {'input_ids': batch[0],
                         'attention_mask': batch[1],
@@ -72,24 +96,38 @@ def training_per_step(training_args, model_args, batch, p_encoder, q_encoder, cr
                         'attention_mask': batch[4],
                         'token_type_ids': batch[5]}
 
+
         p_outputs = p_encoder(**p_inputs)  # (batch_size, emb_dim)
         q_outputs = q_encoder(**q_inputs)  # (batch_size, emb_dim)
 
         # TODO random sampling 방식은 기존의 gold 방식과 다르기 때문에 p_outpus의 shape도 달라지므로 분기를 통해서 shape을 잘 처리해줘야 한다. -> 게시글 참고하기
-
         # Calculate similarity score & loss
-        sim_scores = torch.matmul(q_outputs, torch.transpose(p_outputs, 0, 1))  # (batch_size, batch_size)
+        if model_args.use_negative_sampling:
+            # B * negative num * -1 -> 해당 shape으로 맞춰주기
+            p_outputs = torch.transpose(p_outputs.view(training_args.per_device_retrieval_train_batch_size, training_args.num_neg+1, -1), 1, 2)
+            sim_scores = torch.matmul(q_outputs, p_outputs.squeeze())
+        else:
+            sim_scores = torch.matmul(q_outputs, torch.transpose(p_outputs, 0, 1))  # (batch_size, batch_size)
 
-        # target : position of positive samples = diagonal element
-        targets = torch.arange(0, training_args.per_device_retrieval_train_batch_size).long()
+            # target : position of positive samples = diagonal element
+        if model_args.use_negative_sampling:
+            targets = torch.zeros(training_args.per_device_retrieval_train_batch_size).long()
+        else:
+            targets = torch.arange(0, training_args.per_device_retrieval_train_batch_size).long()
+
         if torch.cuda.is_available():
             targets = targets.to('cuda')
 
         sim_scores = F.log_softmax(sim_scores, dim=1)
         _, preds = torch.max(sim_scores, dim=1)
 
+
         loss = criterion(sim_scores, targets)
-        scaler.scale(loss).backward()
+
+        if model_args.use_negative_sampling:
+            loss.backward()
+        else:
+            scaler.scale(loss).backward()
 
         batch_loss += loss.cpu().item()
         batch_acc += torch.sum(preds.cpu() == targets.cpu())
@@ -155,7 +193,15 @@ def train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, 
         eps=training_args.adam_epsilon
     )
     scaler = GradScaler()
-    scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=10, eta_min=1e-6)
+    if model_args.use_negative_sampling:
+        t_total = len(train_dataloader) // training_args.gradient_accumulation_steps * training_args.num_train_epochs
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=training_args.warmup_steps,
+            num_training_steps=t_total
+        )
+    else:
+        scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=10, eta_min=1e-6)
     criterion = nn.NLLLoss()
 
     # Start training!
@@ -184,14 +230,22 @@ def train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, 
 
             if (step + 1) % training_args.gradient_accumulation_steps == 0:
                 log_step = epoch * len(epoch_iterator) + step
-                scaler.step(optimizer)
-                scaler.update()
+
+                if not model_args.use_negative_sampling:
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
+
                 scheduler.step()
                 optimizer.zero_grad()
                 p_encoder.zero_grad()
                 q_encoder.zero_grad()
 
         train_epoch_loss = float(running_loss / num_cnt)
+        # if model_args.use_negative_sampling:
+        #     train_epoch_acc = float((running_acc / num_cnt) * 100)
+        # else:
         train_epoch_acc = float((running_acc.double() / num_cnt).cpu() * 100)
         print(f'global step-{log_step} | Loss: {train_epoch_loss:.4f} Accuracy: {train_epoch_acc:.2f}')
 
