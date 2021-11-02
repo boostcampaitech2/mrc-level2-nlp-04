@@ -257,7 +257,7 @@ class SparseRetrieval:
         """
 
         if not bm25:
-            query_vec = self.tfidfv.transform([query] if isinstance(query, str) else queries)
+            query_vec = self.tfidfv.transform([query] if isinstance(query, str) else query)
             assert (
                     np.sum(query_vec) != 0
             ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
