@@ -2,6 +2,7 @@ import json
 import os
 import pickle
 import re
+import time
 
 import kss
 import numpy as np
@@ -324,47 +325,43 @@ def make_custom_dataset(dataset_path):
         with open('../data/preprocess_wiki.json', 'r') as f:
             wiki = json.load(f)
 
-        limit = 0
-        if '400' in dataset_path:
-            limit = 400
-        elif '800' in dataset_path:
-            limit = 800
-        elif '1000' in dataset_path:
-            limit = 1000
-
         new_wiki = dict()
         for i in tqdm(range(len(wiki))):
-            if len(wiki[str(i)]['text']) < limit:
+            if len(wiki[str(i)]['text']) < 800:
                 new_wiki[str(i)] = wiki[str(i)]
                 continue
-            data_1, data_2 = passage_split(wiki[str(i)]['text'])
-            new_wiki[str(i) + '_1'] = {'text': data_1, 'corpus_source': wiki[str(i)]['corpus_source'],
-                                       'url': wiki[str(i)]['url'], 'domain': wiki[str(i)]['domain'],
-                                       'title': wiki[str(i)]['title'], 'author': wiki[str(i)]['author'],
-                                       'html': wiki[str(i)]['html'], 'document_id': wiki[str(i)]['document_id']}
-            new_wiki[str(i) + '_2'] = {'text': data_2, 'corpus_source': wiki[str(i)]['corpus_source'],
-                                       'url': wiki[str(i)]['url'], 'domain': wiki[str(i)]['domain'],
-                                       'title': wiki[str(i)]['title'], 'author': wiki[str(i)]['author'],
-                                       'html': wiki[str(i)]['html'], 'document_id': wiki[str(i)]['document_id']}
 
-        save_data(f'../data/split_wiki_{limit}.json', new_wiki)
+            data_list, count = passage_split(wiki[str(i)]['text'])
+            for j in range(count):
+                new_wiki[str(i) + f'_{j}'] = {'text': data_list[j], 'corpus_source': wiki[str(i)]['corpus_source'],
+                                              'url': wiki[str(i)]['url'], 'domain': wiki[str(i)]['domain'],
+                                              'title': wiki[str(i)]['title'], 'author': wiki[str(i)]['author'],
+                                              'html': wiki[str(i)]['html'], 'document_id': wiki[str(i)]['document_id']}
+
+        save_data(f'../data/split_wiki_800.json', new_wiki)
 
 
 def passage_split(text):
-    length = len(text) // 2
+    split_length = 400
+    num = len(text) // split_length
+    count = 1
+    time.sleep(0.5)
     split_datas = kss.split_sentences(text)
-    data_1 = ''
-    data_2 = ''
-    for split_data in split_datas:
-        if abs(len(data_1) - length) > abs(len(data_1) + len(split_data) - length):
-            if len(data_1) == 0:
-                data_1 += split_data
+    data_list = []
+    data = ''
+    for split_data in tqdm(split_datas, desc='kss'):
+        if abs(len(data) - split_length) > abs(len(data) + len(split_data) - split_length) and count < num:
+            if len(data) == 0:
+                data += split_data
             else:
-                data_1 += ' ' + split_data
+                data += ' ' + split_data
+        elif count < num:
+            data_list.append(data)
+            count += 1
+            data = ''
+            data += split_data
         else:
-            if len(data_2) == 0:
-                data_2 += split_data
-            else:
-                data_2 += ' ' + split_data
+            data += split_data
+    data_list.append(data)
 
-    return data_1, data_2
+    return data_list, len(data_list)

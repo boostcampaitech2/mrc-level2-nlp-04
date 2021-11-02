@@ -394,7 +394,7 @@ def get_args():
     training_args.output_dir = os.path.join(
         training_args.output_dir, training_args.project_name, training_args.run_name
     )
-    
+
     assert training_args.retrieval_run_name is not None, "[Error] Retrieval run name need"
     training_args.retrieval_output_dir = os.path.join(
         training_args.retrieval_output_dir, training_args.retrieval_run_name
@@ -413,7 +413,7 @@ def get_args():
             model_args.model_name_or_path = training_args.output_dir
         else:
             model_args.model_name_or_path = model_args.finetuned_mrc_model_path
-      
+
         data_args.dataset_name = 'basic'
         training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
 
@@ -423,7 +423,6 @@ def get_args():
     print(f"output_dir is from {training_args.output_dir}")
     print(f"retrieval_output_dir is from {training_args.retrieval_output_dir}")
     print(f"data is from {data_args.dataset_name}")
-
 
     return model_args, data_args, training_args
 
@@ -466,7 +465,7 @@ def get_models(model_args):
         )
     else:
         attached = model_args.additional_model.lower()
-        assert attached in ['lstm', 'bidaf', 'convolution', 'qa_conv', 'qa_conv_ver2'],\
+        assert attached in ['lstm', 'bidaf', 'convolution', 'qa_conv', 'qa_conv_ver2'], \
             "Available models are lstm, bidaf, convolution, qa_conv, qa_conv_ver2. (No matter letter case)"
         print("******* AttachedLSTM *******")
 
@@ -522,7 +521,8 @@ def get_data(training_args, model_args, data_args, tokenizer):
         else:
             datasets = make_custom_dataset(f'../data/random_concat_train.pkl')
     else:
-        raise ValueError('dataset_name have to be one of ["basic", "preprocess", "concat", "aug_concat", "random_concat"]')
+        raise ValueError(
+            'dataset_name have to be one of ["basic", "preprocess", "concat", "aug_concat", "random_concat"]')
 
     print(datasets)
 
@@ -614,3 +614,59 @@ def make_combined_dataset(data_args, dataset_path):
     combined_dataset = concatenate_datasets([train_dataset, valid_dataset])
     combined_dataset.save_to_disk(dataset_path)
 
+
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+
+def create_and_fill_np_array(start_or_end_logits, dataset, max_len):
+    '''Model의 Logit을 Context 단위로 연결하기 위한 함수'''
+    step = 0
+    logits_concat = np.full((len(dataset), max_len), -100, dtype=np.float64)
+
+    for i, output_logit in enumerate(start_or_end_logits):
+        batch_size = output_logit.shape[0]
+        cols = output_logit.shape[1]
+        if step + batch_size < len(dataset):
+            logits_concat[step: step + batch_size, :cols] = output_logit
+        else:
+            logits_concat[step:, :cols] = output_logit[: len(dataset) - step]
+        step += batch_size
+
+    return logits_concat
+
+
+def custom_to_mask(batch, tokenizer):
+    '''Question 부분에 Random Masking을 적용하는 함수'''
+    mask_token = tokenizer.mask_token_id
+
+    for i in range(len(batch["input_ids"])):
+        # sep 토큰으로 question과 context가 나뉘어져 있다.
+        sep_idx = np.where(batch["input_ids"][i].numpy() == tokenizer.sep_token_id)
+        # q_ids = > 첫번째 sep 토큰위치
+        q_ids = sep_idx[0][0]
+        mask_idxs = set()
+        while len(mask_idxs) < 1:
+            # 1 ~ q_ids까지가 Question 위치
+            ids = random.randrange(1, q_ids)
+            mask_idxs.add(ids)
+
+        for mask_idx in list(mask_idxs):
+            batch["input_ids"][i][mask_idx] = mask_token
+
+    return batch

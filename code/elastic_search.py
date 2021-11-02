@@ -46,8 +46,8 @@ class ElasticSearchRetrieval:
             dataset_path = '../data/wikipedia_documents.json'
         elif self.data_args.elastic_index_name == 'preprocess-wiki-index':
             dataset_path = '../data/preprocess_wiki.json'
-        elif self.data_args.elastic_index_name == 'wiki-index-split-400':
-            dataset_path = '../data/split_wiki_400.json'
+        elif self.data_args.elastic_index_name == 'wiki-index-split-800':
+            dataset_path = '../data/split_wiki_800.json'
 
         if not os.path.isfile(dataset_path):
             print(dataset_path)
