@@ -427,6 +427,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--use_faiss", default=False, type=bool, help="")
     parser.add_argument("--topk", default=1, type=int, help="")
+    parser.add_argument("--bm25", default=False, type=bool, help="")
 
     args = parser.parse_args()
 
@@ -450,6 +451,7 @@ if __name__ == "__main__":
 
     retriever = SparseRetrieval(
         tokenize_fn=tokenizer.tokenize,
+        tokenizer_name="klue/roberta-small",
         data_path=args.data_path,
         context_path=args.context_path,
     )
@@ -473,12 +475,12 @@ if __name__ == "__main__":
             print("correct retrieval result by faiss", df["correct"].sum() / len(df))
 
     else:
-        retriever.get_sparse_embedding()
+        retriever.get_sparse_embedding(args.bm25)
         with timer("bulk query by exhaustive search"):
             def topk_experiment(topk_list):
                 result_dict = {}
                 for topk in tqdm(topk_list):
-                    result_retriever = retriever.retrieve(full_ds, topk)
+                    result_retriever = retriever.retrieve(full_ds, args.bm25, topk)
                     correct = 0
                     for idx in range(len(result_retriever)):
                         if result_retriever["original_context"][idx] in result_retriever["context"][idx]:
@@ -491,5 +493,5 @@ if __name__ == "__main__":
                 topk_experiment(topk_list=[5, 10, 30, 50, 100])
             )
 
-        with timer("single query by exhaustive search"):
-            scores, indices = retriever.retrieve(query, args.topk)
+        # with timer("single query by exhaustive search"):
+        #     scores, indices = retriever.retrieve(query, args.topk)
