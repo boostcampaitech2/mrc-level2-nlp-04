@@ -175,7 +175,7 @@ def run_mrc(
                )
 
     # Trainer 초기화
-    if not training_args.gen_model:
+    if not model_args.gen_model:
         trainer = QuestionAnsweringTrainer(
             model=model,
             args=training_args,

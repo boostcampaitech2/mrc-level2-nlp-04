@@ -54,7 +54,7 @@ def run_mrc(
         model,
 ) -> NoReturn:
     # load data
-    datasets, eval_dataset, data_collator = get_data(training_args, model_args, data_args, tokenizer)
+    datasets, eval_dataset, data_collator = get_data(training_args, model_args, data_args, tokenizer, model)
 
     # 오류가 있는지 확인합니다.
     last_checkpoint, max_seq_length = check_no_error(

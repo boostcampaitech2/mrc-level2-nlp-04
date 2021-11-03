@@ -141,9 +141,7 @@ class ModelArguments:
     )
     gen_model: bool = field(
         default=False,
-        metatdata={
-            "help": "Whether using Generation-based MRC Model"
-        }
+        metadata={"help": "Whether using Generation-based MRC Model"},
     )
 
 
