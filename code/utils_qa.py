@@ -533,16 +533,15 @@ def get_data(training_args, model_args, data_args, tokenizer, model):
 
     print(datasets)
 
-    train_dataset = datasets['train']
-    eval_dataset = datasets['validation']
-
     if not model_args.gen_model:
         data_processor = DataProcessor(tokenizer, model_args, data_args)
         data_collator = DataCollatorWithPadding(
             tokenizer, pad_to_multiple_of=(8 if training_args.fp16 else None)
         )
         if training_args.do_train:
-
+            train_dataset = datasets['train']
+            eval_dataset = datasets['validation']   
+                     
             train_dataset = data_processor.train_tokenizer(train_dataset, train_dataset.column_names)
             eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
 
@@ -557,7 +556,9 @@ def get_data(training_args, model_args, data_args, tokenizer, model):
             pad_to_multiple_of=(8 if training_args.fp16 else None),
         )
         if training_args.do_train:
-    
+            train_dataset = datasets['train']
+            eval_dataset = datasets['validation'] 
+            
             train_dataset = data_processor.preprocessing(train_dataset, train_dataset.column_names)
             eval_dataset = data_processor.preprocessing(eval_dataset, eval_dataset.column_names)
     
