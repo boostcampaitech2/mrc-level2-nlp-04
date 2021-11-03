@@ -3,13 +3,14 @@ import os
 import sys
 
 from typing import NoReturn
-from code.utils_qa import postprocess_text, preprocess_function
+
+from tqdm.std import TqdmExperimentalWarning
 
 import wandb
-from transformers import EarlyStoppingCallback
+from transformers import EarlyStoppingCallback, Seq2SeqTrainer
 
 from utils_qa import check_no_error, get_args, set_seed_everything, get_models, get_data, \
-    post_processing_function, postprocess_text, preprocess_function, compute_metrics, compute_gen_model_metrics, make_combined_dataset
+    post_processing_function, postprocess_text, compute_metrics, compute_gen_model_metrics, make_combined_dataset
 from trainer_qa import QuestionAnsweringTrainer, GenerationModelTrainer
 
 from datasets import load_from_disk, DatasetDict, Dataset
@@ -19,7 +20,6 @@ from arguments import (
     ModelArguments,
     DataTrainingArguments,
     TrainingArguments,
-    Seq2SeqTrainingArguments
 )
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
-    model_args, data_args, training_args, seq2seq_training_args = get_args()
+    model_args, data_args, training_args = get_args()
 
     # do_train mrc model 혹은 do_eval mrc model
     if not (training_args.do_train or training_args.do_eval):
@@ -65,13 +65,13 @@ def main():
         datasets, train_dataset, eval_dataset, data_collator = get_data(training_args, model_args, data_args, tokenizer, model)
         # if "validation" not in datasets:
         #     raise ValueError("--do_eval requires a validation dataset")
-        run_mrc(data_args, training_args, seq2seq_training_args, model_args, tokenizer, model,
+        run_mrc(data_args, training_args, model_args, tokenizer, model,
                 datasets, train_dataset, eval_dataset, data_collator, last_checkpoint)
     else:
-        from transformers import DataCollatorWithPadding
-        from data_processing import DataProcessor
+        from transformers import DataCollatorWithPadding, DataCollatorForSeq2Seq
+        from data_processing import DataProcessor, GenerationBasedDataProcessor
 
-        tokenizer, model_config, _ = get_models(model_args)
+        tokenizer, model_config, model = get_models(model_args)
 
         # 오류가 있는지 확인합니다.
         last_checkpoint, max_seq_length = check_no_error(
@@ -79,10 +79,16 @@ def main():
         )
         data_args.max_seq_length = max_seq_length
 
-        data_collator = DataCollatorWithPadding(
+        data_collator = DataCollatorForSeq2Seq(
+            tokenizer, model=model, label_pad_token_id=tokenizer.pad_token_id, pad_to_multiple_of=None
+        ) if model_args.gen_model else DataCollatorWithPadding(
             tokenizer, pad_to_multiple_of=(8 if training_args.fp16 else None)
         )
-        data_processor = DataProcessor(tokenizer, model_args, data_args)
+        data_processor = GenerationBasedDataProcessor(
+            tokenizer, model_args, data_args
+        ) if model_args.gen_model else DataProcessor(
+            tokenizer, model_args, data_args
+            )
         origin_output_dir = training_args.output_dir
 
         if not os.path.isdir('../data/combined_dataset'):
@@ -100,14 +106,14 @@ def main():
             train_dataset, eval_dataset = map(Dataset.from_dict, [combined_datasets[train_index], combined_datasets[valid_index]])
             datasets = DatasetDict({'train' : train_dataset, 'validation' : eval_dataset})
 
-            train_dataset = data_processor.train_tokenizer(train_dataset, train_dataset.column_names)
-            eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
+            train_dataset = data_processor.preprocessing(train_dataset, train_dataset.column_names) if model_args.gen_model else data_processor.train_tokenizer(train_dataset, train_dataset.column_names)
+            eval_dataset = data_processor.preprocessing(eval_dataset, eval_dataset.column_names) if model_args.gen_model else data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
 
             _, _, model = get_models(model_args)
 
             training_args.output_dir = origin_output_dir + f'/{idx}'
             print(f"####### start training on fold {idx} #######")
-            run_mrc(data_args, training_args, seq2seq_training_args, model_args, tokenizer, model,
+            run_mrc(data_args, training_args, model_args, tokenizer, model,
                     datasets, train_dataset, eval_dataset, data_collator, last_checkpoint, idx)
             print(f"####### end training on fold {idx} #######")
 
@@ -151,7 +157,6 @@ def main():
 def run_mrc(
         data_args: DataTrainingArguments,
         training_args: TrainingArguments,
-        seq2seq_training_args: Seq2SeqTrainingArguments,
         model_args: ModelArguments,
         tokenizer,
         model,
@@ -184,20 +189,17 @@ def run_mrc(
             callbacks=[EarlyStoppingCallback(early_stopping_patience=training_args.early_stopping_patience)],  # early stopping
         )
     else:
-        trainer = seq
-        # trainer = GenerationModelTrainer(
-        #     model=model,
-        #     args=seq2seq_training_args,
-        #     train_dataset=train_dataset if seq2seq_training_args.do_train else None,
-        #     eval_dataset=eval_dataset if seq2seq_training_args.do_eval else None,
-        #     eval_examples=datasets["validation"] if seq2seq_training_args.do_eval else None,
-        #     tokenizer=tokenizer,
-        #     data_collator=data_collator,
-        #     preprocess_function=preprocess_function,
-        #     post_process_function=postprocess_text,
-        #     compute_metrics=compute_gen_model_metrics,
-        #     callbacks=[EarlyStoppingCallback(early_stopping_patience=seq2seq_training_args.early_stopping_patience)],  # early stopping
-        # )
+        trainer = GenerationModelTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset if training_args.do_train else None,
+            eval_dataset=eval_dataset if training_args.do_eval else None,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+            post_processing_function=postprocess_text,
+            compute_metrics=compute_gen_model_metrics,
+            callbacks=[EarlyStoppingCallback(early_stopping_patience=training_args.early_stopping_patience)]
+        )
 
     # Training
     if training_args.do_train:

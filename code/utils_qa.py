@@ -40,7 +40,6 @@ from arguments import (
     ModelArguments,
     DataTrainingArguments,
     TrainingArguments,
-    Seq2SeqTrainingArguments
 )
 from prepare_dataset import get_pickle, make_custom_dataset
 from utils_retrieval import run_sparse_retrieval, run_dense_retrieval, run_elasticsearch
@@ -388,16 +387,16 @@ def get_args():
     훈련 시 입력한 각종 Argument를 반환하는 함수
     '''
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments, Seq2SeqTrainingArguments)
+        (ModelArguments, DataTrainingArguments, TrainingArguments)
     )
-    model_args, data_args, training_args, seq2seq_training_args = parser.parse_args_into_dataclasses()
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    assert training_args.project_name is not None or seq2seq_training_args.project_name is not None, "[Error] Project name needed"
+    assert training_args.project_name is not None, "[Error] Project name needed"
     training_args.output_dir = os.path.join(
         training_args.output_dir, training_args.project_name, training_args.run_name
     )
     
-    assert training_args.retrieval_run_name is not None or seq2seq_training_args.retrieval_run_name is not None, "[Error] Retrieval run name need"
+    assert training_args.retrieval_run_name is not None, "[Error] Retrieval run name need"
     training_args.retrieval_output_dir = os.path.join(
         training_args.retrieval_output_dir, training_args.retrieval_run_name
     )
@@ -407,30 +406,17 @@ def get_args():
     # post_processing_function 에서 사용하기 위해 추가
     training_args.max_answer_length = data_args.max_answer_length
 
-    if not model_args.gen_model:
-        if not training_args.do_predict:
-            training_args.output_dir = increment_path(training_args.output_dir)
-        else:
-            # 학습시 모델을 저장했던 폴더를 model_args.model_name_or_path 에 지정해줌
-            if model_args.finetuned_mrc_model_path is None:
-                model_args.model_name_or_path = training_args.output_dir
-            else:
-                model_args.model_name_or_path = model_args.finetuned_mrc_model_path
-
-            data_args.dataset_name = 'basic'
-            training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
+    if not training_args.do_predict:
+        training_args.output_dir = increment_path(training_args.output_dir)
     else:
-        if not seq2seq_training_args.do_predict:
-            seq2seq_training_args.output_dir = increment_path(seq2seq_training_args.output_dir)
+        # 학습시 모델을 저장했던 폴더를 model_args.model_name_or_path 에 지정해줌
+        if model_args.finetuned_mrc_model_path is None:
+            model_args.model_name_or_path = training_args.output_dir
         else:
-            # 학습시 모델을 저장했던 폴더를 model_args.model_name_or_path 에 지정해줌
-            if model_args.finetuned_mrc_model_path is None:
-                model_args.model_name_or_path = seq2seq_training_args.output_dir
-            else:
-                model_args.model_name_or_path = model_args.finetuned_mrc_model_path
-
-            data_args.dataset_name = 'basic'
-            seq2seq_training_args.output_dir = os.path.join('../predict', seq2seq_training_args.project_name, training_args.run_name)        
+            model_args.model_name_or_path = model_args.finetuned_mrc_model_path   
+        
+        data_args.dataset_name = 'basic'
+        training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)      
     
     print(training_args)
     print(f"model is from {model_args.model_name_or_path}")
@@ -568,7 +554,7 @@ def get_data(training_args, model_args, data_args, tokenizer, model):
             tokenizer,
             model=model,
             label_pad_token_id=label_pad_token_id,
-            pad_to_multiple_of=None,
+            pad_to_multiple_of=(8 if training_args.fp16 else None),
         )
         if training_args.do_train:
     
@@ -600,7 +586,7 @@ def get_data(training_args, model_args, data_args, tokenizer, model):
 
         # test data 폴더에 들어있는 데이터에서도 validation 으로 되어있음
         eval_dataset = datasets['validation']
-        eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
+        eval_dataset = data_processor.preprocessing(eval_dataset, eval_dataset.column_names) if model_args.gen_model else data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
 
         return datasets, eval_dataset, data_collator
 

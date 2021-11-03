@@ -210,3 +210,7 @@ class DataTrainingArguments:
         metadata={
             "help": "Elastic search index name[wiki-index]"}
     )
+    num_beams: Optional[int] =field(
+        default=2,
+        metadata={"help": "Number of beams for beam search that will be used when predicting with the generate method. 1 means no beam search."}
+    )

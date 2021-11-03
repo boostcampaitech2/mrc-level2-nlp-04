@@ -8,9 +8,9 @@ import logging
 import sys
 from typing import NoReturn
 
-from utils_qa import check_no_error, compute_metrics, post_processing_function, get_args, \
-    set_seed_everything, get_models, get_data
-from trainer_qa import QuestionAnsweringTrainer
+from utils_qa import check_no_error, compute_metrics, compute_gen_model_metrics, post_processing_function, \
+     postprocess_text, get_args, set_seed_everything, get_models, get_data
+from trainer_qa import QuestionAnsweringTrainer, GenerationModelTrainer
 
 from arguments import (
     ModelArguments,
@@ -64,17 +64,29 @@ def run_mrc(
 
     print("init trainer...")
     # Trainer 초기화
-    trainer = QuestionAnsweringTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=None,
-        eval_dataset=eval_dataset,
-        eval_examples=datasets["validation"],
-        tokenizer=tokenizer,
-        data_collator=data_collator,
-        post_process_function=post_processing_function,
-        compute_metrics=compute_metrics,
-    )
+    if not model_args.gen_model:
+        trainer = QuestionAnsweringTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=None,
+            eval_dataset=eval_dataset,
+            eval_examples=datasets["validation"],
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+            post_process_function=post_processing_function,
+            compute_metrics=compute_metrics,
+        )
+    else:
+        trainer = GenerationModelTrainer(
+            model=model,
+            args=training_args,
+            eval_dataset=eval_dataset if training_args.do_eval else None,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+            post_processing_function=postprocess_text,
+            compute_metrics=compute_gen_model_metrics,
+            num_beams=data_args.num_beams,
+        )
 
     logger.info("*** Evaluate ***")
 
