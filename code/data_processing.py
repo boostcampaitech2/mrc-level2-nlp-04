@@ -145,3 +145,47 @@ class DataProcessor():
             load_from_cache_file=not self.data_args.overwrite_cache,
         )
         return valid_dataset
+
+
+class GenerationBasedDataProcessor():
+    
+    def __init__(self, tokenizer, model_args, data_args):
+        self.tokenizer = tokenizer
+        self.model_args = model_args
+        self.data_args = data_args
+        self.padding = False        
+
+    def preprocess_function(self, examples):
+        inputs = [f"question: {q}  context: {c} </s>" for q, c in zip(examples["question"], examples["context"])]
+        targets = [f'{a["text"][0]} </s>' for a in examples['answers']]
+        model_inputs = self.tokenizer(
+            inputs,
+            max_length=self.data_args.max_seq_length,
+            padding=self.padding,
+            truncation=True
+        )
+
+        # targets(label)을 위해 tokenizer 설정
+        with self.tokenizer.as_target_tokenizer():
+            labels = self.tokenizer(
+                targets,
+                max_length=self.data_args.max_answer_length,
+                padding=self.padding,
+                truncation=True
+            )
+
+        model_inputs["labels"] = labels["input_ids"]
+        model_inputs["example_id"] = []
+        for i in range(len(model_inputs["labels"])):
+            model_inputs["example_id"].append(examples["id"][i])
+        return model_inputs
+
+    def preprocessing(self, dataset, column_names):
+        dataset = dataset.map(
+            self.preprocess_function,
+            batched=True,
+            num_proc=self.data_args.preprocessing_num_workers,
+            remove_columns=column_names,
+            load_from_cache_file=not self.data_args.overwrite_cache,
+        )
+        return dataset

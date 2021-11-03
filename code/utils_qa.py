@@ -30,8 +30,9 @@ from tqdm.auto import tqdm
 
 import torch
 import random
+import nltk
 from transformers import is_torch_available, PreTrainedTokenizerFast, HfArgumentParser, AutoConfig, AutoTokenizer, \
-    AutoModelForQuestionAnswering, DataCollatorWithPadding
+    AutoModelForQuestionAnswering, DataCollatorWithPadding, AutoModelForSeq2SeqLM, DataCollatorForSeq2Seq
 from transformers.trainer_utils import get_last_checkpoint, EvalPrediction
 
 from datasets import load_from_disk, concatenate_datasets, load_metric
@@ -39,10 +40,11 @@ from arguments import (
     ModelArguments,
     DataTrainingArguments,
     TrainingArguments,
+    Seq2SeqTrainingArguments
 )
 from prepare_dataset import get_pickle, make_custom_dataset
 from utils_retrieval import run_sparse_retrieval, run_dense_retrieval, run_elasticsearch
-from data_processing import DataProcessor
+from data_processing import DataProcessor, GenerationBasedDataProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -386,16 +388,16 @@ def get_args():
     훈련 시 입력한 각종 Argument를 반환하는 함수
     '''
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments)
+        (ModelArguments, DataTrainingArguments, TrainingArguments, Seq2SeqTrainingArguments)
     )
-    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    model_args, data_args, training_args, seq2seq_training_args = parser.parse_args_into_dataclasses()
 
-    assert training_args.project_name is not None, "[Error] Project name needed"
+    assert training_args.project_name is not None or seq2seq_training_args.project_name is not None, "[Error] Project name needed"
     training_args.output_dir = os.path.join(
         training_args.output_dir, training_args.project_name, training_args.run_name
     )
     
-    assert training_args.retrieval_run_name is not None, "[Error] Retrieval run name need"
+    assert training_args.retrieval_run_name is not None or seq2seq_training_args.retrieval_run_name is not None, "[Error] Retrieval run name need"
     training_args.retrieval_output_dir = os.path.join(
         training_args.retrieval_output_dir, training_args.retrieval_run_name
     )
@@ -405,18 +407,31 @@ def get_args():
     # post_processing_function 에서 사용하기 위해 추가
     training_args.max_answer_length = data_args.max_answer_length
 
-    if not training_args.do_predict:
-        training_args.output_dir = increment_path(training_args.output_dir)
-    else:
-        # 학습시 모델을 저장했던 폴더를 model_args.model_name_or_path 에 지정해줌
-        if model_args.finetuned_mrc_model_path is None:
-            model_args.model_name_or_path = training_args.output_dir
+    if not model_args.gen_model:
+        if not training_args.do_predict:
+            training_args.output_dir = increment_path(training_args.output_dir)
         else:
-            model_args.model_name_or_path = model_args.finetuned_mrc_model_path
-      
-        data_args.dataset_name = 'basic'
-        training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
+            # 학습시 모델을 저장했던 폴더를 model_args.model_name_or_path 에 지정해줌
+            if model_args.finetuned_mrc_model_path is None:
+                model_args.model_name_or_path = training_args.output_dir
+            else:
+                model_args.model_name_or_path = model_args.finetuned_mrc_model_path
 
+            data_args.dataset_name = 'basic'
+            training_args.output_dir = os.path.join('../predict', training_args.project_name, training_args.run_name)
+    else:
+        if not seq2seq_training_args.do_predict:
+            seq2seq_training_args.output_dir = increment_path(seq2seq_training_args.output_dir)
+        else:
+            # 학습시 모델을 저장했던 폴더를 model_args.model_name_or_path 에 지정해줌
+            if model_args.finetuned_mrc_model_path is None:
+                model_args.model_name_or_path = seq2seq_training_args.output_dir
+            else:
+                model_args.model_name_or_path = model_args.finetuned_mrc_model_path
+
+            data_args.dataset_name = 'basic'
+            seq2seq_training_args.output_dir = os.path.join('../predict', seq2seq_training_args.project_name, training_args.run_name)        
+    
     print(training_args)
     print(f"model is from {model_args.model_name_or_path}")
     print(f"retrieval model is from {model_args.retrieval_model_name_or_path}")
@@ -460,10 +475,16 @@ def get_models(model_args):
         use_fast=True,
     )
     if model_args.additional_model is None:
-        model = AutoModelForQuestionAnswering.from_pretrained(
-            model_args.model_name_or_path,
-            config=model_config,
-        )
+        if not model_args.gen_model:
+            model = AutoModelForQuestionAnswering.from_pretrained(
+                model_args.model_name_or_path,
+                config=model_config,
+            )
+        else:
+            model = AutoModelForSeq2SeqLM.from_pretrained(
+                model_args.model_name_or_path,
+                config=model_config
+            )
     else:
         attached = model_args.additional_model.lower()
         assert attached in ['lstm', 'bidaf', 'convolution', 'qa_conv', 'qa_conv_ver2'],\
@@ -489,7 +510,7 @@ def get_models(model_args):
     return tokenizer, model_config, model
 
 
-def get_data(training_args, model_args, data_args, tokenizer):
+def get_data(training_args, model_args, data_args, tokenizer, model):
     '''train, validation, test의 dataloader와 dataset를 반환하는 함수'''
     if data_args.dataset_name == 'basic':
         if training_args.do_train:
@@ -526,21 +547,38 @@ def get_data(training_args, model_args, data_args, tokenizer):
 
     print(datasets)
 
-    data_processor = DataProcessor(tokenizer, model_args, data_args)
+    train_dataset = datasets['train']
+    eval_dataset = datasets['validation']
 
-    data_collator = DataCollatorWithPadding(
-        tokenizer, pad_to_multiple_of=(8 if training_args.fp16 else None)
-    )
+    if not model_args.gen_model:
+        data_processor = DataProcessor(tokenizer, model_args, data_args)
+        data_collator = DataCollatorWithPadding(
+            tokenizer, pad_to_multiple_of=(8 if training_args.fp16 else None)
+        )
+        if training_args.do_train:
 
-    if training_args.do_train:
-        train_dataset = datasets['train']
-        eval_dataset = datasets['validation']
+            train_dataset = data_processor.train_tokenizer(train_dataset, train_dataset.column_names)
+            eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
 
-        train_dataset = data_processor.train_tokenizer(train_dataset, train_dataset.column_names)
-        eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
-
-        return datasets, train_dataset, eval_dataset, data_collator
+            return datasets, train_dataset, eval_dataset, data_collator        
     else:
+        data_processor = GenerationBasedDataProcessor(tokenizer, model_args, data_args)
+        label_pad_token_id = tokenizer.pad_token_id
+        data_collator = DataCollatorForSeq2Seq(
+            tokenizer,
+            model=model,
+            label_pad_token_id=label_pad_token_id,
+            pad_to_multiple_of=None,
+        )
+        if training_args.do_train:
+    
+            train_dataset = data_processor.preprocessing(train_dataset, train_dataset.column_names)
+            eval_dataset = data_processor.preprocessing(eval_dataset, eval_dataset.column_names)
+    
+            return datasets, train_dataset, eval_dataset, data_collator
+
+
+    if training_args.do_predict:
         # test data 에는 context 가 없으므로 retrieval 해서 추가해줌
         if model_args.retrieval_type == 'sparse':
             datasets = run_sparse_retrieval(
@@ -595,7 +633,43 @@ def post_processing_function(examples, features, predictions, training_args):
         )
 
 
+def postprocess_text(preds, labels):
+    """
+    postprocess는 nltk를 이용합니다.
+    Huggingface의 TemplateProcessing을 사용하여
+    정규표현식 기반으로 postprocess를 진행할 수 있지만
+    해당 미션에서는 nltk를 이용하여 간단한 후처리를 진행합니다
+    """
+  
+    preds = [pred.strip() for pred in preds]
+    labels = [label.strip() for label in labels]
+      
+    preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
+    labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
+  
+    return preds, labels
+
+
 metric = load_metric("squad")
+
+
+def compute_gen_model_metrics(eval_preds, datasets, tokenizer):
+    preds, labels = eval_preds
+    if isinstance(preds, tuple):
+        preds = preds[0]
+    
+    decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+    # decoded_labels은 rouge metric을 위한 것이며, f1/em을 구할 때 사용되지 않음
+    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+  
+    # 간단한 post-processing
+    decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
+  
+    formatted_predictions = [{"id": ex["id"], "prediction_text": decoded_preds[i]} for i, ex in enumerate(datasets["validation"])]
+    references = [{"id": ex["id"], "answers": ex["answers"]} for ex in datasets["validation"]]
+  
+    result = metric.compute(predictions=formatted_predictions, references=references)
+    return result
 
 
 def compute_metrics(p: EvalPrediction):

@@ -76,6 +76,10 @@ class TrainingArguments(OriginTrainingArguments):
             )
         },
     )
+    predict_with_generate: Optional[bool] = field(
+        default=True,
+        metadata={"help": "Whether to use generate to calculate generative metrics(ROUGE, BLEU)."}
+    )    
     eval_steps: int = field(default=100, metadata={"help": "Run an evaluation every X steps."})
     save_steps: int = field(default=100, metadata={"help": "Save checkpoint every X updates steps."})
     early_stopping_patience: int = field(default=5, metadata={"help": "early_stopping_patience."})
@@ -134,6 +138,12 @@ class ModelArguments:
         default='elastic',
         metadata={"help": "Choose run passage retrieval using sparse or dense or both embedding"
                           "ex. sparse, dense, both(예정 BM25 + dense), elastic"},
+    )
+    gen_model: bool = field(
+        default=False,
+        metatdata={
+            "help": "Whether using Generation-based MRC Model"
+        }
     )
 
 
