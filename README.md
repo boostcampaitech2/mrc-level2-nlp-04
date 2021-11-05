@@ -115,20 +115,37 @@ Knowledge resource 에서 질문에 대답할 수 있는 문서를 찾는 과정
 **EM 기준으로 리더보드 등수가 반영**되고, F1은 참고용으로만 활용됩니다.
 
 ## Dataset Preparation
+### Data Information
+
+아래는 제공하는 데이터셋의 분포를 보여줍니다.
+
+![](code/assets/데이터구성.png)
+
+데이터셋은 편의성을 위해 Huggingface 에서 제공하는 datasets를 이용하여 pyarrow 형식의 데이터로 저장되어있습니다. 다음은 데이터셋의 구성입니다.
+
+### ./data structure
+
+```python
+./data/                        # 전체 데이터
+    ./train_dataset/           # 학습에 사용할 데이터셋. train 과 validation 으로 구성 
+    ./test_dataset/            # 제출에 사용될 데이터셋. validation 으로 구성 
+    ./wikipedia_documents.json # 위키피디아 문서 집합. retrieval을 위해 쓰이는 corpus.
+```
+
+data에 대한 argument 는 `arguments.py` 의 `DataTrainingArguments` 에서 확인 가능합니다. 
+
 ### Prepare Images
-<img width="833" alt="스크린샷 2021-10-08 오후 3 27 35" src="https://user-images.githubusercontent.com/46557183/136508822-bc5a076c-b36a-4915-b6b5-693cae21938e.png">
+학습을 위한 데이터셋의 구조 
+<img width="848" alt="스크린샷 2021-11-05 오후 1 00 37" src="https://user-images.githubusercontent.com/22788924/140456488-47d622b4-6d81-47ab-88a1-56a38839f6f8.png">
 
-- train.csv: 총 32470개
-- test_data.csv: 총 7765개 (정답 라벨은 blind = 100으로 임의 표현)
-- Input: 문장과 두 Entity의 위치(start_idx, end_idx)
-- Target: 카테고리 30개 중 1개
+open domain 데이터셋 구조
 
-<img width="955" alt="스크린샷 2021-10-08 오후 3 29 58" src="https://user-images.githubusercontent.com/46557183/136508992-7a8ff2bf-a5d9-4334-9cab-696a9c08f645.png">
+<img width="761" alt="스크린샷 2021-11-05 오후 1 07 40" src="https://user-images.githubusercontent.com/22788924/140456751-3dff5d55-c296-4bff-934d-34503c2c3725.png">
 
 
-### Data Labeling
-- 크게 no-relation, org, per기준 30개의 클래스로 분류
-<img src="https://user-images.githubusercontent.com/46557183/136508278-bad1fb56-23cd-4b2b-83d8-727bdebc06f3.png" height="500"/>
+- train(train + validation): 총 4,192개
+- test: 총 600개 
+- wiki document(open domain) : 총 60,613
 
 ## :running: Training
 
