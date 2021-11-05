@@ -77,8 +77,7 @@ Knowledge resource 에서 질문에 대답할 수 있는 문서를 찾는 과정
 따라서, 대회는 더 정확한 답변을 내주는 모델을 만드는 팀이 좋은 성적을 거두게 됩니다.
 
 ### Problem definition
-> 주어진 문장과 문장의 단어(subject entity, object entity)를 이용하여, <br>
-> subject entity와 object entity가 어떤 관계가 있는지 예측하는 시스템 or 모델 구축하기
+> 주어지는 지문이 따로 존재하지 않고 사전에 구축되어 있는 Knowledge resource 에서 질문에 대답할 수 있는 문서를 찾기
 
 ### Development environment
 - GPU V100 원격 서버
