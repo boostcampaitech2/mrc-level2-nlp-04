@@ -17,11 +17,7 @@ from utils_qa import set_seed_everything, get_args
 
 logger = logging.getLogger(__name__)
 
-# slack에 학습 결과 알림을 받기 위해서 필요한 url 
-webhook_url = "https://hooks.slack.com/services/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"
 
-
-# @slack_sender(webhook_url=webhook_url, channel="#level2-nlp-04-knockknock")
 def main():
     # get arguments
     model_args, data_args, training_args = get_args()
