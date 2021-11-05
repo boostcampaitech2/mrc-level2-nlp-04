@@ -133,23 +133,16 @@ Knowledge resource 에서 질문에 대답할 수 있는 문서를 찾는 과정
 ## :running: Training
 
 ```
-# 단일 모델 train 시
-$ python new_mlm.py 
+# train 시(train, validate 할 때)
+$ --do_train --do_eval 
 ```
 
-### Train Models
+### Train Retrieval Models
 - [RoBERTa](https://arxiv.org/pdf/1907.11692.pdf)
   - klue/roberta-small(https://huggingface.co/klue/roberta-small)
-  - klue/roberta-base(https://huggingface.co/klue/roberta-base)
-  - klue/roberta-large(https://huggingface.co/klue/roberta-large/tree/main)
 - [BERT](https://arxiv.org/pdf/1810.04805.pdf)
   - klue/bert-base(https://huggingface.co/klue/bert-base)
-- [xlm-roberta-base](https://huggingface.co/xlm-roberta-base)
-- [koelectra-base](https://huggingface.co/monologg/koelectra-base-v3-discriminator)
-```
-# 단일 모델 train 시
-$ python train.py 
-```
+
 
 ### Stratified K-fold
 <img src="https://img1.daumcdn.net/thumb/R1280x0/?scode=mtistory2&fname=https%3A%2F%2Fblog.kakaocdn.net%2Fdn%2F3gQO8%2FbtqF0ZOHja8%2FSUTbGTYwVndcUJ5qWusqa0%2Fimg.png" height="250">
