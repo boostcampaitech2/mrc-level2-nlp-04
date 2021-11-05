@@ -162,7 +162,7 @@ $ python train.py \
 
 
 ## :thought_balloon: Inference
-# train과 inference를 한 번에 실행 시
+### train과 inference를 한 번에 실행 시
 
 ```
 $ python train.py \
@@ -173,6 +173,7 @@ $ python train.py \
 --retrieval_type={type_of_retrieval} \
 --top_k_retrieval={num_of_topk} \
 --fold={num_fold}
+--with_inference
 ```
 
 ```
