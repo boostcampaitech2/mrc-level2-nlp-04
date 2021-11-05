@@ -163,22 +163,20 @@ $ python train.py \
 
 
 ## :thought_balloon: Inference
-### train과 inference를 한 번에 실행 시
 
 ```
+# train
 $ python train.py \
 --do_train \
 --project_name={output_dir} \
 --run_name={output_dir} \
 --additional_model={type_of_layer} \
---retrieval_type={type_of_retrieval} \
---top_k_retrieval={num_of_topk} \
---fold={num_fold}
---with_inference
+--fold={num_fold} \
+--with_inference={False}
 ```
 
 ```
-# inference만 실행 시
+# inference
 $ python inference.py \
 --do_predict \
 --project_name={output_dir} \
