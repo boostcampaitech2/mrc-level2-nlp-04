@@ -131,16 +131,27 @@ open domain 데이터셋 구조
 
 ```
 # train 시(train, validate 할 때)
-$ --do_train --do_eval 
+$ python train.py 
+--do_train --do_eval 
+--project_name {wandb project name} \
+--run_name {wandb run name} \
+--additional_model {'', 'convolution', 'qa_conv', 'ddnn' 등}
 ```
 
 ### Train Retrieval Models
 - [RoBERTa](https://arxiv.org/pdf/1907.11692.pdf)
   - klue/roberta-small(https://huggingface.co/klue/roberta-small)
-  - klue/roberta-small(https://huggingface.co/klue/roberta-large)
 - [BERT](https://arxiv.org/pdf/1810.04805.pdf)
   - klue/bert-base(https://huggingface.co/klue/bert-base)
 
+```
+# retrieval_train 시
+$ retrieval_train.py 
+--project_name dense_retrieval_implement 
+--retrieval_run_name roberta-large 
+--use_trained_model False 
+--retrieval_model_name_or_path klue/roberta-large 
+```
 
 ### K-fold
 <img src="https://img1.daumcdn.net/thumb/R1280x0/?scode=mtistory2&fname=https%3A%2F%2Fblog.kakaocdn.net%2Fdn%2F3gQO8%2FbtqF0ZOHja8%2FSUTbGTYwVndcUJ5qWusqa0%2Fimg.png" height="250">
@@ -149,7 +160,6 @@ $ --do_train --do_eval
 ```py 
 from sklearn.model_selection import KFold
 ```
-
 ### Training Arguments
 ```
 $ python train.py \
