@@ -84,9 +84,8 @@ Knowledge resource 에서 질문에 대답할 수 있는 문서를 찾는 과정
 
 ![img.png](img.png)
 
-본 ODQA 대회에서 우리가 만들 모델은 two-stage로 구성되어 있습니다. 첫 단계는 질문에 관련된 문서를 찾아주는 "retriever" 단계이고, 
-다음으로는 관련된 문서를 읽고 적절한 답변을 찾거나 만들어주는 "reader" 단계입니다. 두 가지 단계를 각각 구성하고 그것들을 적절히 통합하게 되면, 
-어려운 질문을 던져도 답변을 해주는 ODQA 시스템을 여러분들 손으로 직접 만들어보게 됩니다.
+본 ODQA 대회에서 우리가 만들 모델은 two-stage로 구성되어 있습니다. 
+첫 단계는 질문에 관련된 문서를 찾아주는 "retriever" 단계이고, 다음으로는 관련된 문서를 읽고 적절한 답변을 찾거나 만들어주는 "reader" 단계입니다.
 
 따라서, 대회는 더 정확한 답변을 내주는 모델을 만드는 팀이 좋은 성적을 거두게 됩니다.
 
@@ -96,10 +95,18 @@ Knowledge resource 에서 질문에 대답할 수 있는 문서를 찾는 과정
 
 ### Development environment
 - GPU V100 원격 서버
-- PyCharm 또는 Visual Studio Code | Python 3.7(or over)
+- PyCharm 또는 Visual Studio Code | Python 3.8(or over)
 
 ### Evaluation
-![image](https://user-images.githubusercontent.com/22788924/136509413-3597fc20-6d08-4575-9927-745adc32bf65.png)
+1. **Exact Match (EM)**: 모델의 예측과, 실제 답이 정확하게 일치할 때만 점수가 주어집니다. 즉 모든 질문은 0점 아니면 1점으로 처리됩니다. 단, 띄어쓰기나 "."과 같은 문자가 포함되어 있다고 오답으로 처리되면 억울하겠죠? 이런 것은 제외한 후 정답에 대해서만 일치하는지 확인합니다. 또한 답이 하나가 아닐 수 있는데, 이런 경우는 하나라도 일치하면 정답으로 간주합니다.
+
+<img width="819" alt="image" src="https://user-images.githubusercontent.com/52475378/140455999-c0193c62-e214-4519-8f8b-8fc429bfffb5.png">
+
+2. **F1 Score**: EM과 다르게 부분 점수를 제공합니다. 예를 들어, 정답은 "Barack Obama"지만 예측이 "Obama"일 때, EM의 경우 0점을 받겠지만 F1 Score는 겹치는 단어도 있는 것을 고려해 부분 점수를 받을 수 있습니다.
+
+<img width="825" alt="image" src="https://user-images.githubusercontent.com/52475378/140456045-6d8c35c2-dc59-4bc3-a309-97af9ce036b6.png">
+
+**EM 기준으로 리더보드 등수가 반영**되고, F1은 참고용으로만 활용됩니다.
 
 ## Dataset Preparation
 ### Prepare Images
