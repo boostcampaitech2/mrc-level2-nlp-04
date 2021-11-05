@@ -163,26 +163,24 @@ $ python train.py \
 
 
 ## :thought_balloon: Inference
-```
-# cross_validation 을 사용안할시
-$ python inference.py \
-  --model_name={kinds of models} \
-  --model_dir={model_filepath} \
-  --output_name={output_filename} \
-  --inference_type=default \
-  --run_name = exp\
-  --cv = False\
-  --tem = (typed entitiy 사용시 True, 아니면 False)
+# train과 inference를 한 번에 실행 시
+$ python train.py \
+--do_train \
+--project_name={output_dir} \
+--run_name={output_dir} \
+--additional_model={type_of_layer} \
+--retrieval_type={type_of_retrieval} \
+--top_k_retrieval={num_of_topk} \
+--fold={num_fold}
 ```
 
 ```
-# cross_validation 을 사용해 나온 model 5개를 통해 inference 시
+# inference만 실행 시
 $ python inference.py \
-  --model_name={kinds of models} \
-  --model_dir={model_filepath} \
-  --output_name={output_filename} \
-  --inference_type = cv\
-  --run_name = exp\
-  --cv = True\
-  --tem = (if typed entity: True, else: False)
+--do_predict \
+--project_name={output_dir} \
+--run_name={output_dir} \
+--retrieval_type={type_of_retrieval} \
+--top_k_retrieval={num_of_topk} \
+--fold={num_fold}
 ```
