@@ -32,7 +32,7 @@ for id in ids:
     result[id] = answer
     score[id] = sorted(pred.items(), key=lambda x: -x[1])
 
-with open(f'../predict/{args.project_name}/{args.run_name}/combined_predictions.json', 'w') as f:
+with open(f'../predict/{args.project_name}/{args.run_name}/combined_predictions.json', 'w', encoding='utf-8') as f:
     json.dump(result, f)
 
 with open(f'../predict/{args.project_name}/{args.run_name}/combined_score.json', 'w') as f:

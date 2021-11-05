@@ -40,7 +40,7 @@ from arguments import (
     DataTrainingArguments,
     TrainingArguments,
 )
-from prepare_dataset import get_pickle, make_custom_dataset
+from prepare_dataset import get_pickle, make_custom_dataset, save_pickle
 from utils_retrieval import run_sparse_retrieval, run_dense_retrieval, run_elasticsearch
 from data_processing import DataProcessor
 
@@ -557,8 +557,12 @@ def get_data(training_args, model_args, data_args, tokenizer):
                 datasets
             )
         elif model_args.retrieval_type == 'elastic':
-            # number of texet to concat
-            datasets, scores = run_elasticsearch(training_args, data_args, datasets)
+            if os.path.exists('../data/elastic_test_dataset.pkl'):
+                get_pickle('../data/elastic_test_dataset.pkl')
+            else:
+                # number of texet to concat
+                datasets, scores = run_elasticsearch(training_args, data_args, datasets)
+                save_pickle('../data/elastic_test_dataset.pkl', datasets)
 
         # test data 폴더에 들어있는 데이터에서도 validation 으로 되어있음
         eval_dataset = datasets['validation']

@@ -249,11 +249,48 @@ def main():
             eval_dataset = data_processor.valid_tokenizer(eval_dataset, eval_dataset.column_names)
 
             _, _, model = get_models(model_args)
+            model.to(training_args.device)
 
             training_args.output_dir = origin_output_dir + f'/{idx}'
             print(f"####### start training on fold {idx} #######")
             train_mrc(training_args, tokenizer, model, datasets, train_dataset, eval_dataset, data_collator, idx)
             print(f"####### end training on fold {idx} #######")
+
+    print(f"####### Saved at {training_args.output_dir} #######")
+    if training_args.with_inference:
+        if training_args.fold:
+            training_args.output_dir = origin_output_dir
+        sub, output, project, run = training_args.output_dir.split('/')
+        output = '/'.join([sub, output])
+
+        if not training_args.fold:
+            print(project, run)
+            string = (
+                    f'python inference.py --do_predict --project_name {project} \
+                    --run_name {run}'
+                    + (f' --additional_model {model_args.additional_model}'
+                       if model_args.additional_model is not None else '')
+                    + f' --top_k_retrieval {data_args.top_k_retrieval}'
+            )
+            print(f"####### inference start automatically #######")
+            os.system(string)
+        else:
+            for k in range(1, 6):
+                string = (
+                        f"python inference.py --do_predict --project_name {project} \
+                                    --run_name {run}/{k}"
+                        + (f" --additional_model {model_args.additional_model}"
+                           if model_args.additional_model is not None else '')
+                        + f' --top_k_retrieval {data_args.top_k_retrieval}'
+                        + ' --elastic_index_name preprocess-wiki-index'
+                )
+                print(f"####### fold {k} inference start automatically #######")
+                os.system(string)
+
+            string = f'python combine.py --project_name {project} --run_name {run}'
+            print(f"####### fold predictions start to be combined #######")
+            os.system(string)
+            print(print(f"####### combining end #######"))
 
 
 if __name__ == "__main__":

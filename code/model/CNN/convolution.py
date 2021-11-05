@@ -13,11 +13,11 @@ class RobertaConv(RobertaPreTrainedModel):
         self.roberta = RobertaModel(config)
         self.init_weights()
 
-        self.conv1d_kernel1 = nn.Conv1d(config.hidden_size, config.hidden_size, kernel_size=1)
-        self.conv1d_kernel3 = nn.Conv1d(config.hidden_size, config.hidden_size, kernel_size=3, padding=1)
-        self.conv1d_kernel5 = nn.Conv1d(config.hidden_size, config.hidden_size, kernel_size=5, padding=2)
-        self.dropout = nn.Dropout(0.3)
-        self.linear = nn.Linear(config.hidden_size * 3, 2, bias=True)
+        self.conv1d_kernel1 = nn.Conv1d(config.hidden_size, config.hidden_size // 3, kernel_size=1)
+        self.conv1d_kernel3 = nn.Conv1d(config.hidden_size, config.hidden_size // 3, kernel_size=3, padding=1)
+        self.conv1d_kernel5 = nn.Conv1d(config.hidden_size, config.hidden_size // 3, kernel_size=5, padding=2)
+        self.dropout = nn.Dropout(0.5)
+        self.linear = nn.Linear(config.hidden_size // 3 * 3, 2, bias=True)
 
     def forward(self,
                 input_ids=None,
@@ -74,9 +74,9 @@ class RobertaConv(RobertaPreTrainedModel):
             end_loss = loss_fct(end_logits, end_positions)
             total_loss = (start_loss + end_loss) / 2
 
-        if not return_dict:
-            output = (start_logits, end_logits) + outputs[2:]
-            return ((total_loss,) + output) if total_loss is not None else output
+        # if not return_dict:
+        #     output = (start_logits, end_logits) + outputs[2:]
+        #     return ((total_loss,) + output) if total_loss is not None else output
 
         return QuestionAnsweringModelOutput(
             loss=total_loss,
