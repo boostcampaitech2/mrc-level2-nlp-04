@@ -17,6 +17,7 @@ from utils_qa import set_seed_everything, get_args
 
 logger = logging.getLogger(__name__)
 
+# slack에 학습 결과 알림을 받기 위해서 필요한 url 
 webhook_url = "https://hooks.slack.com/services/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"
 
 
@@ -50,7 +51,7 @@ def main():
 
     return {'best_acc': best_acc}
 
-
+# train step마다 수행되는 과정 : loss구하기
 def training_per_step(training_args, model_args, batch, p_encoder, q_encoder, criterion, scaler):
     with autocast():
         batch_loss, batch_acc = 0, 0
@@ -92,7 +93,7 @@ def training_per_step(training_args, model_args, batch, p_encoder, q_encoder, cr
 
     return batch_loss, batch_acc
 
-
+# eval step마다 수행되는 함수 : 몇 개를 맞췄는지 count
 def evaluating_per_step(training_args, model_args, batch, p_encoder, q_encoder):
     batch_acc = 0
 
@@ -126,8 +127,11 @@ def evaluating_per_step(training_args, model_args, batch, p_encoder, q_encoder):
     batch_acc += torch.sum(preds.cpu() == targets)
 
     return batch_acc
-
-
+'''
+retrieval 학습을 위한 메소드 : dataloader, optimizer, scaler, scheduler 등을 설정하고 매 step마다 
+training_per_step을 통해서 Loss를 구해주고 gradient_accumulation_steps값에 맞춰 update, backward등을 수행해준다.
+학습이 1 epoch 끝나면 validation dataset으로 evaluation을 해주고 나온 결과과 기존의 최고점보다 높으면 새롭게 모델을 저장한다.
+'''
 def train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, q_encoder):
     dense_retrieval = DenseRetrieval(training_args, model_args, data_args, tokenizer, p_encoder, q_encoder)
 
@@ -206,7 +210,8 @@ def train_retrieval(training_args, model_args, data_args, tokenizer, p_encoder, 
 
         eval_epoch_acc = float((running_acc / num_cnt) * 100)
         print(f'Epoch-{epoch} | Accuracy: {eval_epoch_acc:.2f}')
-
+        
+        # compare current eval & best eval
         if eval_epoch_acc > best_acc:
             best_epoch = epoch
             best_acc = eval_epoch_acc
