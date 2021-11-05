@@ -137,6 +137,7 @@ $ --do_train --do_eval
 ### Train Retrieval Models
 - [RoBERTa](https://arxiv.org/pdf/1907.11692.pdf)
   - klue/roberta-small(https://huggingface.co/klue/roberta-small)
+  - klue/roberta-small(https://huggingface.co/klue/roberta-large)
 - [BERT](https://arxiv.org/pdf/1810.04805.pdf)
   - klue/bert-base(https://huggingface.co/klue/bert-base)
 
