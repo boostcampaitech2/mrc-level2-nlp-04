@@ -105,11 +105,11 @@ Knowledge resource 에서 질문에 대답할 수 있는 문서를 찾는 과정
 
 ### ./data structure
 
-```python
+```
 ./data/                        # 전체 데이터
-    ./train_dataset/           # 학습에 사용할 데이터셋. train 과 validation 으로 구성 
-    ./test_dataset/            # 제출에 사용될 데이터셋. validation 으로 구성 
-    ./wikipedia_documents.json # 위키피디아 문서 집합. retrieval을 위해 쓰이는 corpus.
+./train_dataset/               # 학습에 사용할 데이터셋. train 과 validation 으로 구성 
+./test_dataset/                # 제출에 사용될 데이터셋. validation 으로 구성 
+./wikipedia_documents.json     # 위키피디아 문서 집합. retrieval을 위해 쓰이는 corpus.
 ```
 
 data에 대한 argument 는 `arguments.py` 의 `DataTrainingArguments` 에서 확인 가능합니다. 
