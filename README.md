@@ -151,12 +151,17 @@ $ --do_train --do_eval
 ```py 
 from sklearn.model_selection import StratifiedKFold
 ```
-```
-# cross_validation 사용해 train 시
-$ python train.py --cv True
-```
-`train.py` cross_validation 함수
 
+### Training Arguments
+```
+$ python train.py \
+  --do_train\
+  --project_name={wandb project name}\
+  --run_name={wandb run name}\
+  --model_name_or_path={kinds of models}\
+  --num_train_epochs={epoch size}\
+  --fold={k-fold 사용 시 작성}\
+```
 
 
 ## :thought_balloon: Inference
