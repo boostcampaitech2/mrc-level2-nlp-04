@@ -27,6 +27,7 @@ if is_torch_tpu_available():
 
 
 # Huggingface의 Trainer를 상속받아 QuestionAnswering을 위한 Trainer를 생성합니다.
+# Trainer의 train 함수는 그대로 사용하고 evaluate와 predict를 오버라이딩 합니다.
 class QuestionAnsweringTrainer(Trainer):
     def __init__(self, *args, eval_examples=None, post_process_function=None, **kwargs):
         super().__init__(*args, **kwargs)
