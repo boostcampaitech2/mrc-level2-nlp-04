@@ -173,7 +173,7 @@ $ python train.py \
 --additional_model={type_of_layer} \
 --retrieval_type={type_of_retrieval} \
 --top_k_retrieval={num_of_topk} \
---fold={num_fold} \
+--fold={True or False} \
 --with_inference={True}
 ```
 
@@ -185,5 +185,5 @@ $ python inference.py \
 --run_name={output_dir} \
 --retrieval_type={type_of_retrieval} \
 --top_k_retrieval={num_of_topk} \
---fold={num_fold}
+--fold={True or False}
 ```
