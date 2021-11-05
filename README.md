@@ -4,6 +4,12 @@
 
 ![](code/assets/대회이미지.png)
 
+<div align="center">
+  
+<img src="https://user-images.githubusercontent.com/45033215/140456126-56c78fe4-2889-4519-9fb7-b6ca8c9037c3.png" height=340 width=500>
+  
+</div>
+
 ## :fire: Getting Started
 
 ### Data setting & Install Requirements
