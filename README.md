@@ -94,7 +94,7 @@ Knowledge resource 에서 질문에 대답할 수 있는 문서를 찾는 과정
 
 **EM 기준으로 리더보드 등수가 반영**되고, F1은 참고용으로만 활용됩니다.
 
-## Dataset Preparation
+## 📒 Dataset Preparation
 ### Data Information
 
 아래는 제공하는 데이터셋의 분포를 보여줍니다.
