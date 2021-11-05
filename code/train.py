@@ -124,6 +124,9 @@ def main():
                 + (f' --additional_model {model_args.additional_model}'
                    if model_args.additional_model is not None else '')
                 + f' --top_k_retrieval {data_args.top_k_retrieval}'
+                + (f' --bm25 {data_args.bm25}'
+                   if data_args.bm25 == True else '')
+                + f' --retrieval_type {model_args.retrieval_type}'
             )
             print(f"####### inference start automatically #######")
             os.system(string)
