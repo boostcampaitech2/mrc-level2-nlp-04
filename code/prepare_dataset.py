@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 
 def preprocess(text):
+    """전처리를 통해 영어,숫자,한글,일본어,중국어, 여러 괄호 및 기타 특수문자를 제외한 나머지를 제거합니다."""
     text = re.sub(r'\n', ' ', text)
     text = re.sub(r"\\n", " ", text)
     text = re.sub(r'#', ' ', text)
@@ -21,6 +22,7 @@ def preprocess(text):
 
 
 def run_preprocess(data_dict):
+    """ 전처리 작업을 진행합니다."""
     start_ids = data_dict["answers"]["answer_start"][0]
     before = data_dict["context"][:start_ids]
     after = data_dict["context"][start_ids:]
@@ -41,11 +43,13 @@ def run_preprocess_to_wiki(data_dict):
 
 
 def save_data(data_path, new_wiki):
+    """data_path 파일에 new_wiki를 작성합니다."""
     with open(data_path, 'w', encoding='utf-8') as make_file:
         json.dump(new_wiki, make_file, indent="\t", ensure_ascii=False)
 
 
 def save_pickle(save_path, data_set):
+    """pickle 저장"""
     file = open(save_path, "wb")
     pickle.dump(data_set, file)
     file.close()
@@ -60,6 +64,7 @@ def get_pickle(pickle_path):
 
 
 def search_es(es_obj, index_name, question_text, n_results):
+    """elasticsearch를 이용해 index search"""
     query = {
             'query': {
                 'match': {
@@ -72,6 +77,7 @@ def search_es(es_obj, index_name, question_text, n_results):
 
 
 def make_custom_dataset(dataset_path):
+    """ 조금 더 깔끔하게 Features를 이용해 index로 분류된 wiki문서 dataset 만들기"""
     if not (os.path.isdir('../data/train_dataset') or
             os.path.isdir('../data/wikipedia_documents.json')):
         raise Exception("Set the original data path to '../data'")
@@ -93,39 +99,6 @@ def make_custom_dataset(dataset_path):
             new_wiki[str(ids)] = run_preprocess_to_wiki(wiki[str(ids)])
         save_data('../data/preprocess_wiki.json', new_wiki)
 
-    # if not os.path.isfile('../data/aug_train.pkl'):
-    #     aug_train_df = pd.read_csv('../data/aug_train.csv')
-    #     aug_train_df['answers'] = aug_train_df['answers'].apply(lambda x: eval(x))
-    #     origin_dataset = load_from_disk('../data/train_dataset')
-    #     origin_valid_dataset = origin_dataset['validation']
-    #     dataset = DatasetDict({'train': Dataset.from_pandas(aug_train_df, features=train_f),
-    #                                'validation': origin_valid_dataset})
-    #     save_pickle('../data/aug_train.pkl', dataset)
-    #
-    #     if 'aug' in dataset_path:
-    #         return dataset
-    #
-    # if not os.path.isfile('../data/aug_preprocess_train.pkl'):
-    #     dataset = get_pickle('../data/aug_train.pkl')
-    #     train_dataset = dataset['train']
-    #     valid_dataset = dataset['validation']
-    #
-    #     new_train_data, new_valid_data = [], []
-    #     for data in tqdm(train_dataset):
-    #         new_data = run_preprocess(data)
-    #         new_train_data.append(new_data)
-    #     for data in tqdm(valid_dataset):
-    #         new_data = run_preprocess(data)
-    #         new_valid_data.append(new_data)
-    #
-    #     train_df = pd.DataFrame(new_train_data)
-    #     valid_df = pd.DataFrame(new_valid_data)
-    #     dataset = DatasetDict({'train': Dataset.from_pandas(train_df, features=train_f),
-    #                            'validation': Dataset.from_pandas(valid_df, features=train_f)})
-    #     save_pickle('../data/aug_preprocess_train.pkl', dataset)
-    #
-    #     if 'aug_preprocess' in dataset_path:
-    #         return dataset
 
     if not os.path.isfile('../data/preprocess_train.pkl'):
         train_dataset = load_from_disk('../data/train_dataset')['train']
@@ -148,59 +121,6 @@ def make_custom_dataset(dataset_path):
         if 'preprocess' in dataset_path:
             return dataset
 
-    # if 'aug_concat' in dataset_path:
-    #     base_dataset = get_pickle('../data/aug_preprocess_train.pkl')
-    #     train_dataset, valid_dataset = base_dataset['train'], base_dataset['validation']
-    #
-    #     train_data = [{'id': train_dataset[i]['id'],
-    #                    'question': train_dataset[i]['question'],
-    #                    'answers': train_dataset[i]['answers'],
-    #                    'context': train_dataset[i]['context']}
-    #                   for i in range(len(train_dataset))]
-    #     valid_data = [{'id': valid_dataset[i]['id'],
-    #                    'question': valid_dataset[i]['question'],
-    #                    'answers': valid_dataset[i]['answers'],
-    #                    'context': valid_dataset[i]['context']}
-    #                   for i in range(len(valid_dataset))]
-    #
-    #     es = Elasticsearch()
-    #
-    #     k = 5  # k : how many contexts to concatenate
-    #     for idx, train in enumerate(train_data):
-    #         result = search_es(es, 'preprocess-wiki-index', train['question'], k)
-    #         context_list = [(hit['_source']['document_text'], hit['_score']) for hit in result['hits']['hits']]
-    #         contexts = train['context']
-    #         count = 0
-    #         for context in context_list:
-    #             # if same context already exists, don't concatenate
-    #             if train['context'] == context[0]:
-    #                 continue
-    #             contexts += ' ' + context[0]
-    #             count += 1
-    #             if count == (k - 1):
-    #                 break
-    #         train_data[idx]['context'] = contexts
-    #
-    #     for idx, valid in enumerate(valid_dataset):
-    #         result = search_es(es, 'preprocess-wiki-index', valid['question'], k)
-    #         context_list = [(hit['_source']['document_text'], hit['_score']) for hit in result['hits']['hits']]
-    #         contexts = valid['context']
-    #         count = 0
-    #         for context in context_list:
-    #             if valid['context'] == context[0]:
-    #                 continue
-    #             contexts += ' ' + context[0]
-    #             count += 1
-    #             if count == (k - 1):
-    #                 break
-    #         valid_data[idx]['context'] = contexts
-    #
-    #     train_df = pd.DataFrame(train_data)
-    #     valid_df = pd.DataFrame(valid_data)
-    #     dataset = DatasetDict({'train': Dataset.from_pandas(train_df, features=train_f),
-    #                            'validation': Dataset.from_pandas(valid_df, features=train_f)})
-    #     save_pickle(dataset_path, dataset)
-    #     return dataset
     if 'random_concat' in dataset_path:
         base_dataset = get_pickle('../data/preprocess_train.pkl')
         train_dataset, valid_dataset = base_dataset['train'], base_dataset['validation']
@@ -321,6 +241,7 @@ def make_custom_dataset(dataset_path):
         return dataset
 
     if 'split_wiki' in dataset_path:
+        """Sequence length 길이별 split을 통해 wiki문서 json 만들기."""
         with open('../data/preprocess_wiki.json', 'r') as f:
             wiki = json.load(f)
 
@@ -351,6 +272,7 @@ def make_custom_dataset(dataset_path):
 
 
 def passage_split(text):
+    """kss.split_sentences를 이용해 데이터를 split."""
     length = len(text) // 2
     split_datas = kss.split_sentences(text)
     data_1 = ''

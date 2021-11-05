@@ -24,11 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
-    # --help flag 를 실행시켜서 확인할 수 도 있습니다.
     model_args, data_args, training_args = get_args()
 
-    # do_train mrc model 혹은 do_eval mrc model
+    # trainer의 do_train과 do_eval flag가 설정되어있어야 합니다.
     if not (training_args.do_train or training_args.do_eval):
         print("####### set do_train or do_eval #######")
         return
@@ -51,18 +49,17 @@ def main():
     os.environ['WANDB_WATCH'] = 'all'
     os.environ['WANDB_SILENT'] = "true"
 
+    tokenizer, model_config, model = get_models(model_args)
+
+    # check correct data or not
+    last_checkpoint, max_seq_length = check_no_error(
+        data_args, training_args, tokenizer
+    )
+    data_args.max_seq_length = max_seq_length
+        
+    # 5-Fold or not
     if training_args.fold is False:
-        tokenizer, model_config, model = get_models(model_args)
-
-        # 오류가 있는지 확인합니다.
-        last_checkpoint, max_seq_length = check_no_error(
-            data_args, training_args, tokenizer
-        )
-        data_args.max_seq_length = max_seq_length
-
         datasets, train_dataset, eval_dataset, data_collator = get_data(training_args, model_args, data_args, tokenizer)
-        # if "validation" not in datasets:
-        #     raise ValueError("--do_eval requires a validation dataset")
         run_mrc(data_args, training_args, model_args, tokenizer, model,
                 datasets, train_dataset, eval_dataset, data_collator, last_checkpoint)
     else:
@@ -71,20 +68,22 @@ def main():
 
         tokenizer, model_config, _ = get_models(model_args)
 
-        # 오류가 있는지 확인합니다.
-        last_checkpoint, max_seq_length = check_no_error(
-            data_args, training_args, tokenizer
-        )
-        data_args.max_seq_length = max_seq_length
-
         data_collator = DataCollatorWithPadding(
             tokenizer, pad_to_multiple_of=(8 if training_args.fp16 else None)
         )
         data_processor = DataProcessor(tokenizer, model_args, data_args)
         origin_output_dir = training_args.output_dir
 
+        ### ======= make_combined_dataset ======= ###
+        ### === merge train and valid dataset === ###
+        ### == to split it by 5 different ways. == ###
         if not os.path.isdir('../data/combined_dataset'):
             make_combined_dataset(data_args, '../data/combined_dataset')
+
+        # concat is used to remove mismatch between train and test
+        # train : only 1 contexts
+        # test : top-30 contexts
+        # so, to make machine understanding difficult.
         if not os.path.isdir('../data/concat_combined_dataset'):
             make_combined_dataset(data_args, '../data/concat_combined_dataset')
 
@@ -109,6 +108,9 @@ def main():
                     datasets, train_dataset, eval_dataset, data_collator, last_checkpoint, idx)
             print(f"####### end training on fold {idx} #######")
 
+    # if with_inference flag is True(default), train.py execute inference.py
+    # the reason we don't implement on shell is that save_path is changable
+    # so we do this way for dynamic path
     print(f"####### Saved at {training_args.output_dir} #######")
     if training_args.with_inference:
         if training_args.fold:
@@ -148,7 +150,7 @@ def main():
             os.system(string)
             print(print(f"####### combining end #######"))
 
-
+            
 def run_mrc(
         data_args: DataTrainingArguments,
         training_args: TrainingArguments,

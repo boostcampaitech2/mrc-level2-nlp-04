@@ -10,11 +10,16 @@ from retrieval import SparseRetrieval
 from dense_retrieval import get_encoders, DenseRetrieval, timer
 from utils_qa import get_args
 
+'''
+retrieval의 성능 확인 
+확인 방법 : 주어진 qeustion에 대해서 top k개의 corpus를 open corpus에서 가져오고 가져온 corpus에 정답이 있는지 확인하는 방식
+* 주어진 dataset의 지문은 open corpus에 포함되어 있다.
+'''
 if __name__ == "__main__":
     # get arguments
     model_args, data_args, training_args = get_args()
 
-    # Test sparse
+    # 전처리가 되어 있는 open corpus를 사용할지에 따라 분기가 나눠진다.
     if data_args.elastic_index_name == 'wiki-index':
         org_dataset = load_from_disk('../data/train_dataset')
     else:
@@ -29,6 +34,11 @@ if __name__ == "__main__":
     print("*" * 40, "query dataset", "*" * 40)
     print(full_ds)
 
+    '''
+    test에 사용할 retrieval의 종류에 따른 분기점
+    elastic, sparse, dense, both등이 있다.
+    
+    '''
     if model_args.retrieval_type == 'elastic':
         retriever = ElasticSearchRetrieval(data_args)
     else:
@@ -44,12 +54,9 @@ if __name__ == "__main__":
         elif model_args.retrieval_type == 'dense':
             retriever = DenseRetrieval(training_args, model_args, data_args, tokenizer, p_encoder, q_encoder)
             retriever.get_dense_embedding()
-        elif model_args.retrieval_type == 'both':
-            pass
         else:
             raise ValueError('data_args.eval_retrieval 을 sparse or dense or both 로 설정하세요!')
 
-    query = "대통령을 포함한 미국의 행정부 견제권을 갖는 국가 기관은?"
 
     # wandb setting
     os.environ['WANDB_LOG_MODEL'] = 'true'
@@ -61,10 +68,8 @@ if __name__ == "__main__":
                entity='ssp',
                reinit=True,
                )
-
+    # top k개 주어졌을때 eval 평가하기(k개만큼의 corpus를 가져왔을때 정답 지문이 포함되었있는지 확인)
     if data_args.use_faiss:
-
-        # test bulk
         with timer("bulk query by exhaustive search"):
             df = retriever.retrieve_faiss(full_ds)
             df["correct"] = df["original_context"] == df["context"]
