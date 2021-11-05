@@ -22,6 +22,7 @@ from datasets import (
 )
 
 
+# 학습 시간을 측정하기 위한 
 @contextmanager
 def timer(name):
     t0 = time.time()
@@ -409,8 +410,9 @@ class SparseRetrieval:
 
 if __name__ == "__main__":
 
+    # sparse.py를 실행시 필요한 args 설정
     import argparse
-
+    
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
         "--dataset_name", default="../data/train_dataset", type=str, help=""
@@ -443,7 +445,8 @@ if __name__ == "__main__":
     print(full_ds)
 
     from transformers import AutoTokenizer
-
+    
+    # sparse를 위한 tokenizer, Sparse 클래스 셋팅
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_name_or_path,
         use_fast=False,
@@ -460,6 +463,7 @@ if __name__ == "__main__":
     query = full_ds["question"][idx]
     single_query_context = full_ds["context"][idx]
 
+    # faiss 사용여부에 따른 분기점
     if args.use_faiss:
         retriever.build_faiss()
 
@@ -493,5 +497,3 @@ if __name__ == "__main__":
                 topk_experiment(topk_list=[5, 10, 30, 50, 100])
             )
 
-        # with timer("single query by exhaustive search"):
-        #     scores, indices = retriever.retrieve(query, args.topk)
