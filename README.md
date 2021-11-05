@@ -2,7 +2,7 @@
   <h1>MRC Open-Domain Question Answering</h1>
 </div>
 
-상민이의 방해1122334455667788990011
+상민이의 방해112233445566778899001122
 
 ![](code/assets/대회이미지.png)
 
