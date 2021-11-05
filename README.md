@@ -154,6 +154,7 @@ from sklearn.model_selection import KFold
 $ python train.py \
   --do_train \
   --project_name = {wandb project name} \
+  --with_inference = False
   --run_name = {wandb run name} \
   --model_name_or_path = {kinds of models} \
   --num_train_epochs = {epoch size} \
