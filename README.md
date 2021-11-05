@@ -163,6 +163,7 @@ $ python train.py \
 
 ## :thought_balloon: Inference
 # train과 inference를 한 번에 실행 시
+
 ```
 $ python train.py \
 --do_train \
