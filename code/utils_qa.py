@@ -465,6 +465,7 @@ def get_models(model_args):
             config=model_config,
         )
     else:
+        # 추가 layer를 설정합니다.
         attached = model_args.additional_model.lower()
         assert attached in ['lstm', 'bidaf', 'convolution', 'qa_conv', 'qa_conv_ver2'],\
             "Available models are lstm, bidaf, convolution, qa_conv, qa_conv_ver2. (No matter letter case)"
@@ -603,6 +604,7 @@ def compute_metrics(p: EvalPrediction):
     return metric.compute(predictions=p.predictions, references=p.label_ids)
 
 
+# dataset을 concat 해줍니다.
 def make_combined_dataset(data_args, dataset_path):
     if data_args.dataset_name == 'concat':
         dataset = get_pickle('../data/concat_train.pkl')
