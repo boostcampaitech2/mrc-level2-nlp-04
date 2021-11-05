@@ -19,9 +19,10 @@ from datasets import (
 )
 from transformers import AutoConfig, AutoTokenizer
 
+# DPR에서 사용할 custom encoder 모델
 from model.Retrieval_Encoder.retrieval_encoder import RetrievalEncoder
 
-
+# 학습이 이루어지는 시간을 측정하기 위해 사용되는 함수
 @contextmanager
 def timer(name):
     t0 = time.time()
@@ -43,7 +44,7 @@ class DenseRetrieval:
 
         self.data_path = data_path
         self.context_path = context_path
-
+        
         with open(os.path.join(self.data_path, self.context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
@@ -350,12 +351,6 @@ class DenseRetrieval:
         result = np.matmul(query_embedding, self.p_embedding.T)
         if not isinstance(result, np.ndarray):
             result = result.toarray()
-        # doc_scores = []
-        # doc_indices = []
-        # for i in range(result.shape[0]):
-        #     sorted_result = np.argsort(result[i, :])[::-1]
-        #     doc_scores.append(result[i, :][sorted_result].tolist()[:k])
-        #     doc_indices.append(sorted_result.tolist()[:k])
 
         # 진명훈님 공유해주신 코드 적용
         doc_scores = np.partition(result, -k)[:, -k:][:, ::-1]
@@ -486,7 +481,7 @@ class DenseRetrieval:
 
         return D.tolist(), I.tolist()
 
-
+# encoder 모델 불러오는 함수
 def get_encoders(training_args, model_args):
     model_config = AutoConfig.from_pretrained(model_args.retrieval_model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(model_args.retrieval_model_name_or_path, use_fast=True)
