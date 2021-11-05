@@ -155,12 +155,12 @@ from sklearn.model_selection import StratifiedKFold
 ### Training Arguments
 ```
 $ python train.py \
-  --do_train\
-  --project_name={wandb project name}\
-  --run_name={wandb run name}\
-  --model_name_or_path={kinds of models}\
-  --num_train_epochs={epoch size}\
-  --fold={k-fold 사용 시 작성}\
+  --do_train \
+  --project_name={wandb project name} \
+  --run_name={wandb run name} \
+  --model_name_or_path={kinds of models} \
+  --num_train_epochs={epoch size} \
+  --fold={k-fold 사용 시 작성} \
 ```
 
 
