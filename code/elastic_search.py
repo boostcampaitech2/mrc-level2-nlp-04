@@ -13,20 +13,22 @@ from prepare_dataset import make_custom_dataset
 
 @contextmanager
 def timer(name):
+    """시간을 작성하는데 필요한 함수입니다."""
     t0 = time.time()
     yield
     print(f"[{name}] done in {time.time() - t0:.3f} s")
 
 
 class ElasticSearchRetrieval:
+    """ElasticSearchRetrieval을 하는데 필요한 함수 입니다."""
     def __init__(self, data_args):
         self.data_args = data_args
         self.index_name = data_args.elastic_index_name
         self.k = data_args.top_k_retrieval
 
-        self.es = Elasticsearch()
+        self.es = Elasticsearch() #Elasticsearch 작동
 
-        if not self.es.indices.exists(self.index_name):
+        if not self.es.indices.exists(self.index_name): #wiki-index가 es.indices와 맞지 않을 때 맞춰주기 위한 조건문
             self.qa_records, self.wiki_articles = self.set_datas()
             self.set_index()
             self.populate_index(es_obj=self.es,
@@ -40,7 +42,7 @@ class ElasticSearchRetrieval:
             make_custom_dataset('../data/preprocess_train.pkl')
 
         train_file = load_from_disk('../data/train_dataset')['train']
-        # validation_file = load_from_disk('../data/train_dataset')['validation']
+
 
         if self.data_args.elastic_index_name == 'wiki-index':
             dataset_path = '../data/wikipedia_documents.json'
@@ -111,6 +113,7 @@ class ElasticSearchRetrieval:
         print(f'Succesfully loaded {n_records} into {index_name}')
 
     def retrieve(self, query_or_dataset, topk=None):
+        """ retrieve 과정"""
         if topk is not None:
             self.k = topk
 
