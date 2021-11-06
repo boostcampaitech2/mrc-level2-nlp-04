@@ -77,7 +77,7 @@ Knowledge resource 에서 질문에 대답할 수 있는 문서를 찾는 과정
 따라서, 대회는 더 정확한 답변을 내주는 모델을 만드는 팀이 좋은 성적을 거두게 됩니다.
 
 ### Problem definition
-> 주어지는 지문이 따로 존재하지 않고 사전에 구축되어 있는 Knowledge resource 에서 질문에 대답할 수 있는 문서를 찾기
+주어지는 지문이 따로 존재하지 않고 사전에 구축되어 있는 Knowledge resource 에서 질문에 대답할 수 있는 문서를 찾기
 
 ### Development environment
 - GPU V100 원격 서버
